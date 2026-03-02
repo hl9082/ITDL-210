@@ -1,0 +1,30 @@
+# --- Core Image Processing ---
+# Used for Phase 1: Grayscale, binarization, and contour extraction
+opencv-python>=4.8.0
+
+# --- Deep Learning & OCR Engine ---
+# Used for Phase 2 & 3: Building and training the custom CNN/Siamese network
+torch>=2.0.0
+torchvision>=0.15.0
+
+# --- Data Manipulation & Math ---
+# Essential for array handling (OpenCV images are NumPy arrays) and result mapping
+numpy>=1.24.0
+pandas>=2.0.0
+
+# --- Machine Learning Utilities ---
+# Used for Nearest Neighbors search, PCA/t-SNE visualization, and metrics
+scikit-learn>=1.3.0
+
+# --- Data Augmentation ---
+# Used to artificially degrade "clean" letters to make your OCR model more robust
+albumentations>=1.3.1
+
+# --- Visualization ---
+# Used for plotting your accuracy graphs, loss curves, and drawing output grids
+matplotlib>=3.7.0
+seaborn>=0.12.0
+
+# --- Dataset Downloading ---
+# Used to easily grab the Ancient Lives dataset directly from your command line
+kaggle>=1.5.16

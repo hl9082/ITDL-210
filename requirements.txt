@@ -7,6 +7,8 @@ opencv-python>=4.8.0
 torch>=2.0.0
 torchvision>=0.15.0
 
+huggingface_hub #to store checkpoints
+
 # --- Data Manipulation & Math ---
 # Essential for array handling (OpenCV images are NumPy arrays) and result mapping
 numpy>=1.24.0

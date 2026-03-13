@@ -28,7 +28,7 @@ from tqdm import tqdm
 from huggingface_hub import HfApi
 
 # --- Global Configuration ---
-DATA_DIR = "2_processed_binary_data"
+DATA_DIR = "processed_binary_data"
 MODEL_DIR = "saved_models"
 MODEL_PATH = os.path.join(MODEL_DIR, "greek_ocr_lenet_fast.pth")
 HF_REPO_ID = "YOUR_HUGGINGFACE_USERNAME/ancient-greek-ocr" # <--- UPDATE THIS!

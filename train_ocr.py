@@ -31,7 +31,7 @@ from huggingface_hub import HfApi
 DATA_DIR = "processed_binary_data"
 MODEL_DIR = "saved_models"
 MODEL_PATH = os.path.join(MODEL_DIR, "greek_ocr_lenet_fast.pth")
-HF_REPO_ID = "YOUR_HUGGINGFACE_USERNAME/ancient-greek-ocr" # <--- UPDATE THIS!
+HF_REPO_ID = "huyisme-005/ancient-greek-ocr" # <--- UPDATE THIS!
 
 BATCH_SIZE = 512
 EPOCHS = 5

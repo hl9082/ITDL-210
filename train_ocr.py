@@ -25,7 +25,7 @@ import torch.optim as optim
 from torch.utils.data import DataLoader, random_split
 from torchvision import datasets, transforms
 from tqdm import tqdm
-from huggingface_hub import HfApi
+from huggingface_hub import HfApi, hf_hub_download
 
 # --- Global Configuration ---
 DATA_DIR = "processed_binary_data"
@@ -127,11 +127,39 @@ def main():
     optimizer = optim.Adam(model.parameters(), lr=LEARNING_RATE)
     scaler = torch.amp.GradScaler('cuda') if device.type == 'cuda' else None
 
-    # --- 4. Training Loop with Live Checkpointing ---
-    print("\n⚡ Starting Speedrun Training with HF Checkpointing...")
+    # --- 4. Resume from Hugging Face Logic ---
+    start_epoch = 0
+    print("\n🔍 Checking Hugging Face for existing checkpoints to resume...")
+    try:
+        # Try downloading the config to see what epoch we are on
+        config_file = hf_hub_download(repo_id=HF_REPO_ID, filename="training_config.json", repo_type="model")
+        with open(config_file, "r") as f:
+            config_data = json.load(f)
+            start_epoch = config_data.get("epoch", 0)
+
+        # Download the weights and optimizer state
+        model_file = hf_hub_download(repo_id=HF_REPO_ID, filename="greek_ocr_lenet_fast.pth", repo_type="model")
+        checkpoint = torch.load(model_file, map_location=device)
+        
+        # Load the saved brains and momentum
+        model.load_state_dict(checkpoint['model_state_dict'])
+        if 'optimizer_state_dict' in checkpoint:
+            optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
+
+        print(f"✅ Found checkpoint! Resuming training from Epoch {start_epoch + 1}...")
+    except Exception as e:
+        print("ℹ️ No previous checkpoint found on Hugging Face (or repo is empty). Starting fresh from Epoch 1.")
+
+    # --- 5. Training Loop with Live Checkpointing ---
+    if start_epoch >= EPOCHS:
+        print(f"\n🎉 Model has already completed all {EPOCHS} epochs! Nothing to train.")
+        return
+
+    print(f"\n⚡ Starting Training Loop (Epoch {start_epoch + 1} to {EPOCHS})...")
     start_time = time.time()
 
-    for epoch in range(EPOCHS):
+    # NOTE: We use start_epoch in the range now so it skips previously trained epochs!
+    for epoch in range(start_epoch, EPOCHS):
         model.train()
         running_loss = 0.0
         progress_bar = tqdm(train_loader, desc=f"Epoch {epoch+1}/{EPOCHS} [Train]", leave=False)

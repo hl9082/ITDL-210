@@ -22,7 +22,7 @@ from PIL import Image
 
 # --- Global Configuration ---
 HF_REPO_ID = "huyisme-005/ancient-greek-ocr" # Your exact repo
-IMAGE_PATH = "sample_manuscript_line.jpg"    # <--- Put your test image path here!
+IMAGE_PATH = "real_test_data/sample_manuscript_line.jpg"    # <--- Put your test image path here!
 IMAGE_SIZE = 32
 
 # --- 1. The Network Architecture (Must match exactly) ---

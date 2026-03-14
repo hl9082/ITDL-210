@@ -14,6 +14,8 @@ Attributes:
     EPOCHS (int): Total number of full passes over the training dataset.
     LEARNING_RATE (float): The step size for the Adam optimizer.
     IMAGE_SIZE (int): The target width and height to resize images to.
+
+Author: Huy Le (hl9082)
 """
 
 import os

@@ -113,9 +113,10 @@ def main():
     dataset = datasets.ImageFolder(root=DATA_DIR, transform=transform)
     num_classes = len(dataset.classes)
     
-    train_size = int(0.8 * len(dataset))
+    train_size = int(0.9 * len(dataset))
     val_size = len(dataset) - train_size
     train_dataset, val_dataset = random_split(dataset, [train_size, val_size])
+    print(f"📊 Dataset split: {train_size} training images, {val_size} validation images.")
 
     train_loader = DataLoader(train_dataset, batch_size=BATCH_SIZE, shuffle=True, num_workers=2, pin_memory=True)
     val_loader = DataLoader(val_dataset, batch_size=BATCH_SIZE, shuffle=False, num_workers=2, pin_memory=True)

@@ -28,6 +28,7 @@ from torch.utils.data import DataLoader, random_split
 from torchvision import datasets, transforms
 from tqdm import tqdm
 from huggingface_hub import HfApi, hf_hub_download
+import numpy as np
 
 # --- Global Configuration ---
 DATA_DIR = "processed_binary_data"
@@ -126,7 +127,31 @@ def main():
     print(f"\n🚀 Hardware selected: {device.type.upper()}")
 
     model = LeNet5(num_classes=num_classes).to(device)
-    criterion = nn.CrossEntropyLoss()
+    # === NEW: Calculating Class Weights to fix the Class Imbalance ===
+    print("\n⚖️ Calculating class weights to balance the dataset...")
+    
+    
+    # 1. Extract the labels specifically for the 90% training subset
+    train_indices = train_dataset.indices
+    train_targets = [dataset.targets[i] for i in train_indices]
+    
+    # 2. Count how many times each letter appears in the training set
+    class_counts = np.bincount(train_targets)
+    
+    # 3. Apply the Inverse Class Frequency formula
+    total_samples = len(train_targets)
+    num_classes = len(dataset.classes)
+    
+    # Avoid division by zero just in case a class has 0 samples in the split
+    class_counts = np.where(class_counts == 0, 1, class_counts) 
+    class_weights = total_samples / (num_classes * class_counts)
+    
+    # 4. Convert to a PyTorch tensor and send it to the GPU
+    weights_tensor = torch.tensor(class_weights, dtype=torch.float32).to(device)
+    
+    # 5. Inject the weights into the Loss Function
+    criterion = nn.CrossEntropyLoss(weight=weights_tensor)
+    print("✅ Class weights successfully applied to the Loss Function!")
     optimizer = optim.Adam(model.parameters(), lr=LEARNING_RATE)
     scaler = torch.amp.GradScaler('cuda') if device.type == 'cuda' else None
 

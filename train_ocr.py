@@ -34,7 +34,7 @@ import numpy as np
 DATA_DIR = "processed_binary_data"
 MODEL_DIR = "saved_models"
 MODEL_PATH = os.path.join(MODEL_DIR, "greek_ocr_lenet_fast.pth")
-HF_REPO_ID = "huyisme-005/ancient-greek-ocr_2" # <--- UPDATE THIS!
+HF_REPO_ID = "huyisme-005/ancient-greek-ocr_3" # <--- UPDATE THIS!
 
 BATCH_SIZE = 512
 EPOCHS = 10
@@ -157,6 +157,8 @@ def main():
 
     # --- 4. Resume from Hugging Face Logic ---
     start_epoch = 0
+    best_val_loss = float('inf')
+    patience_counter = 0
     print("\n🔍 Checking Hugging Face for existing checkpoints to resume...")
     try:
         # Try downloading the config to see what epoch we are on
@@ -164,6 +166,9 @@ def main():
         with open(config_file, "r") as f:
             config_data = json.load(f)
             start_epoch = config_data.get("epoch", 0)
+            # Load our early stopping state!
+            best_val_loss = config_data.get("best_val_loss", float('inf'))
+            patience_counter = config_data.get("patience_counter", 0)
 
         # Download the weights and optimizer state
         model_file = hf_hub_download(repo_id=HF_REPO_ID, filename="greek_ocr_lenet_fast.pth", repo_type="model")
@@ -175,6 +180,7 @@ def main():
             optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
 
         print(f"✅ Found checkpoint! Resuming training from Epoch {start_epoch + 1}...")
+        print(f"   -> Previous Best Loss: {best_val_loss:.4f} | Strikes: {patience_counter}")
     except Exception as e:
         print("ℹ️ No previous checkpoint found on Hugging Face (or repo is empty). Starting fresh from Epoch 1.")
 
@@ -182,7 +188,7 @@ def main():
     if start_epoch >= EPOCHS:
         print(f"\n🎉 Model has already completed all {EPOCHS} epochs! Nothing to train.")
         return
-
+    patience = 3 # How many bad epochs we tolerate before killing the script
     print(f"\n⚡ Starting Training Loop (Epoch {start_epoch + 1} to {EPOCHS})...")
     start_time = time.time()
 
@@ -216,63 +222,88 @@ def main():
         model.eval()
         correct = 0
         total = 0
+        val_running_loss = 0.0 # Track validation loss for Early Stopping
         with torch.no_grad():
             for images, labels in val_loader:
                 images, labels = images.to(device), labels.to(device)
                 if scaler:
                     with torch.amp.autocast('cuda'):
                         outputs = model(images)
+                        loss = criterion(outputs, labels)
                 else:
                     outputs = model(images)
-                    
+                    loss = criterion(outputs, labels)
+                val_running_loss += loss.item()
                 _, predicted = torch.max(outputs.data, 1)
                 total += labels.size(0)
                 correct += (predicted == labels).sum().item()
                 
         val_accuracy = 100 * correct / total
         avg_loss = running_loss / len(train_loader)
-        print(f"🏁 Epoch {epoch+1} Summary | Loss: {avg_loss:.4f} | Validation Accuracy: {val_accuracy:.2f}%")
+        val_loss = val_running_loss / len(val_loader)
+        print(f"🏁 Epoch {epoch+1} Summary | Loss: {avg_loss:.4f} | Validation Loss: {val_loss:.4f} | Validation Accuracy: {val_accuracy:.2f}%")
 
-        # --- Hugging Face Checkpointing ---
-        print("☁️ Pushing checkpoint to Hugging Face...")
-        
-        # Save model locally first
-        save_dict = {
-            'model_state_dict': model.state_dict(),
-            'classes': dataset.classes
-        }
-        torch.save(save_dict, MODEL_PATH)
+        # --- Early Stopping & Checkpointing ---
+        if val_loss < best_val_loss:
+            print(f"🌟 Validation loss improved from {best_val_loss:.4f} to {val_loss:.4f}. Pushing to Hugging Face!")
+            best_val_loss = val_loss
+            patience_counter = 0
+            
+            # Save dict to hard drive
+            save_dict = {
+                'model_state_dict': model.state_dict(),
+                'optimizer_state_dict': optimizer.state_dict(), # Needed for resuming
+                'classes': dataset.classes
+            }
+            torch.save(save_dict, MODEL_PATH)
 
-        # Create a config/metrics file for this epoch
-        config_data = {
-            "epoch": epoch + 1,
-            "loss": avg_loss,
-            "accuracy": val_accuracy,
-            "model_type": "LeNet-5 Speedrun",
-            "image_size": IMAGE_SIZE,
-            "classes": dataset.classes
-        }
-        
-        with open("training_config.json", "w") as f:
-            json.dump(config_data, f, indent=4)
+            # Save state configuration
+            config_data = {
+                "epoch": epoch + 1,
+                "loss": avg_loss,
+                "val_loss": val_loss,
+                "accuracy": val_accuracy,
+                "best_val_loss": best_val_loss,
+                "patience_counter": patience_counter,
+                "model_type": "LeNet-5 Speedrun",
+                "image_size": IMAGE_SIZE,
+                "classes": dataset.classes
+            }
+            with open("training_config.json", "w") as f:
+                json.dump(config_data, f, indent=4)
 
-        # Upload both files to the hub
-        api.upload_file(
-            path_or_fileobj=MODEL_PATH,
-            path_in_repo="greek_ocr_lenet_fast.pth",
-            repo_id=HF_REPO_ID,
-            repo_type="model"
-        )
-        api.upload_file(
-            path_or_fileobj="training_config.json",
-            path_in_repo="training_config.json",
-            repo_id=HF_REPO_ID,
-            repo_type="model"
-        )
+            # Upload ONLY the best model to Hugging Face
+            api.upload_file(path_or_fileobj=MODEL_PATH, path_in_repo="greek_ocr_lenet_fast.pth", repo_id=HF_REPO_ID, repo_type="model")
+            api.upload_file(path_or_fileobj="training_config.json", path_in_repo="training_config.json", repo_id=HF_REPO_ID, repo_type="model")
+            
+        else:
+            patience_counter += 1
+            print(f"⚠️ No improvement. Strike {patience_counter} of {patience}.")
+            
+            # Save the new strike count to the config so resuming remembers the strikes!
+            config_data = {
+                "epoch": epoch + 1,
+                "loss": avg_loss,
+                "val_loss": val_loss,
+                "accuracy": val_accuracy,
+                "best_val_loss": best_val_loss,
+                "patience_counter": patience_counter,
+                "model_type": "LeNet-5 Speedrun",
+                "image_size": IMAGE_SIZE,
+                "classes": dataset.classes
+            }
+            with open("training_config.json", "w") as f:
+                json.dump(config_data, f, indent=4)
+            api.upload_file(path_or_fileobj="training_config.json", path_in_repo="training_config.json", repo_id=HF_REPO_ID, repo_type="model")
+
+            if patience_counter >= patience:
+                print(f"\n💀 EARLY STOPPING TRIGGERED! The model has stopped learning.")
+                print(f"The smartest model is safely preserved on Hugging Face (Val Loss: {best_val_loss:.4f}).")
+                break # Instantly breaks the epoch loop
 
     total_time = (time.time() - start_time) / 60
     print(f"\n✅ Training Complete! Total Time: {total_time:.2f} minutes.")
-    print(f"Your model is securely hosted at: https://huggingface.co/{HF_REPO_ID}")
+    print(f"Your best model is securely hosted at: https://huggingface.co/{HF_REPO_ID}")
 
 if __name__ == "__main__":
     main()

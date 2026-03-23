@@ -37,7 +37,7 @@ MODEL_PATH = os.path.join(MODEL_DIR, "greek_ocr_lenet_fast.pth")
 HF_REPO_ID = "huyisme-005/ancient-greek-ocr_2" # <--- UPDATE THIS!
 
 BATCH_SIZE = 512
-EPOCHS = 5
+EPOCHS = 10
 LEARNING_RATE = 0.002
 IMAGE_SIZE = 32
 

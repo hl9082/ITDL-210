@@ -27,7 +27,7 @@ from tqdm import tqdm
 
 # --- Global Configuration ---
 DATA_DIR = "processed_binary_data" 
-HF_REPO_ID = "huyisme-005/ancient-greek-ocr_3" # Make sure this matches your repo!
+HF_REPO_ID = "huyisme-005/ancient-greek-ocr_4" # Make sure this matches your repo!
 IMAGE_SIZE = 32
 BATCH_SIZE = 512
 

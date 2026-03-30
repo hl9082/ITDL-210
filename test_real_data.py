@@ -16,13 +16,16 @@ Author: Huy Le (hl9082)
 import cv2
 import torch
 import torch.nn as nn
+import torch.nn.functional as F
 from torchvision import transforms
 from huggingface_hub import hf_hub_download
 from PIL import Image
+import numpy as np
+import os
 
 # --- Global Configuration ---
-HF_REPO_ID = "huyisme-005/ancient-greek-ocr" # Your exact repo
-IMAGE_PATH = "real_test_data/sample_manuscript_line.jpg"    # <--- Put your test image path here!
+HF_REPO_ID = "huyisme-005/ancient-greek-ocr_4" # Your exact repo
+IMAGE_PATH = "test_clean_no_PsiXiBetaZeta/"    # <--- Put your test image path here!
 IMAGE_SIZE = 32
 
 # --- 1. The Network Architecture (Must match exactly) ---
@@ -99,88 +102,118 @@ def download_and_load_model(device):
     print("✅ Model loaded successfully!")
     return model, classes
 
-def process_and_predict(image_path, model, classes, device):
-    """Slices an image into characters, predicts each one, and prints the transcription.
+def preprocess_image(image_path):
+    """Loads and applies OpenCV preprocessing to a raw manuscript image.
 
-    Reads a local image using OpenCV, extracts bounding boxes for each character,
-    sorts them left-to-right, formats them for PyTorch, and runs inference.
+    Converts to grayscale, applies Gaussian blur, and uses adaptive thresholding 
+    to binarize the image.
 
     Args:
-        image_path (str): The local file path to the Ancient Greek text image.
-        model (LeNet5): The loaded and trained PyTorch model.
-        classes (list of str): The list of class names corresponding to model outputs.
-        device (torch.device): The hardware device (CPU or GPU) to run the predictions on.
+        image_path (str): The file path to the raw image.
+
+    Returns:
+        numpy.ndarray or None: The binarized image array, or None if loading fails.
     """
-    print(f"\n🔍 Processing image: {image_path}")
+    original_img = cv2.imread(image_path)
+    if original_img is None:
+        return None
+
+    gray_img = cv2.cvtColor(original_img, cv2.COLOR_BGR2GRAY)
+    blurred = cv2.GaussianBlur(gray_img, (5, 5), 0)
     
-    # 1. Read the image in grayscale
-    img = cv2.imread(image_path, cv2.IMREAD_GRAYSCALE)
-    if img is None:
-        print(f"❌ Error: Could not find image at {image_path}")
+    thresh = cv2.adaptiveThreshold(
+        blurred, 255, 
+        cv2.ADAPTIVE_THRESH_GAUSSIAN_C, 
+        cv2.THRESH_BINARY_INV, 
+        15, 4  
+    )
+    return thresh
+
+
+def test_directory(data_dir, model, classes, device):
+    """Iterates through all folders and images to test model accuracy.
+
+    Assumes the directory is structured such that subfolder names represent 
+    the true class of the images within them (e.g., `data_dir/Alpha/img.png`).
+
+    Args:
+        data_dir (str): The root directory containing image subfolders.
+        model (LeNet5): The loaded PyTorch model.
+        classes (list of str): The list of model class names.
+        device (torch.device): CPU or GPU.
+    """
+    if not os.path.exists(data_dir):
+        print(f"❌ Error: The directory '{data_dir}' does not exist.")
         return
 
-    # 2. Binarize the image (force it to pure black and white)
-    _, thresh = cv2.threshold(img, 128, 255, cv2.THRESH_BINARY_INV | cv2.THRESH_OTSU)
-
-    # 3. Find character contours (bounding boxes)
-    contours, _ = cv2.findContours(thresh, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
-    
-    # Filter out tiny specks of noise and get bounding boxes
-    bounding_boxes = [cv2.boundingRect(c) for c in contours if cv2.contourArea(c) > 15]
-    
-    # Sort boxes from left to right to read naturally
-    bounding_boxes = sorted(bounding_boxes, key=lambda x: x[0])
-
-    # 4. Define the exact same image transforms used in training
     transform = transforms.Compose([
         transforms.Resize((IMAGE_SIZE, IMAGE_SIZE)),
         transforms.ToTensor(),
         transforms.Normalize((0.5,), (0.5,))
     ])
 
-    transcription = []
-    
-    print("✍️ Transcribing left to right...")
-    # 5. Extract, Predict, and Reconstruct
-    with torch.no_grad(): # No need to calculate gradients for prediction
-        for x, y, w, h in bounding_boxes:
-            # Crop the character with a tiny bit of padding
-            padding = 2
-            char_crop = img[max(0, y-padding):y+h+padding, max(0, x-padding):x+w+padding]
+    total_images = 0
+    correct_predictions = 0
+
+    print("🚀 Starting Batch Processing...")
+    print("-" * 50)
+
+    # os.walk automatically loops through every folder and subfolder
+    for root, _, files in os.walk(data_dir):
+        # Extract the folder name (which should be the true Greek letter)
+        true_class = os.path.basename(root)
+
+        for file_name in files:
+            # Skip non-image files like .DS_Store or text files
+            if not file_name.lower().endswith(('.png', '.jpg', '.jpeg')):
+                continue
+
+            image_path = os.path.join(root, file_name)
             
-            # Convert OpenCV image (numpy array) to PIL Image for PyTorch transforms
-            char_pil = Image.fromarray(char_crop)
-            
-            # Transform and add batch dimension (Shape becomes: [1, 1, 32, 32])
+            # 1. Preprocess
+            thresh_img = preprocess_image(image_path)
+            if thresh_img is None:
+                print(f"⚠️ Warning: Could not read {image_path}. Skipping.")
+                continue
+
+            # 2. Format for PyTorch
+            char_pil = Image.fromarray(thresh_img)
             char_tensor = transform(char_pil).unsqueeze(0).to(device)
+
+            # 3. Predict
+            with torch.no_grad():
+                outputs = model(char_tensor)
+                _, predicted_idx = torch.max(outputs, 1)
+                predicted_class = classes[predicted_idx.item()]
+
+            # 4. Evaluate
+            total_images += 1
+            is_correct = (predicted_class == true_class)
+            if is_correct:
+                correct_predictions += 1
             
-            # Predict!
-            outputs = model(char_tensor)
-            _, predicted_idx = torch.max(outputs, 1)
-            
-            predicted_char = classes[predicted_idx.item()]
-            transcription.append(predicted_char)
+            # Optional: Print out misclassifications for debugging
+            if not is_correct:
+                print(f"❌ Mismatch in {file_name}: True='{true_class}', AI Guessed='{predicted_class}'")
 
-            # Optional: Draw a rectangle on the original image to show what the AI saw
-            cv2.rectangle(img, (x, y), (x+w, y+h), (0, 255, 0), 1)
+    # Final Report
+    print("-" * 50)
+    if total_images == 0:
+        print("⚠️ No valid images found in the specified directory.")
+    else:
+        accuracy = (correct_predictions / total_images) * 100
+        print(f"🏆 BATCH TESTING COMPLETE")
+        print(f"Total Images Processed: {total_images}")
+        print(f"Correct Predictions:    {correct_predictions}")
+        print(f"Real-World Accuracy:    {accuracy:.2f}%")
 
-    # Print the final result
-    print("\n====================================")
-    print("📜 FINAL TRANSCRIPTION:")
-    print(" ".join(transcription))
-    print("====================================\n")
-
-    # Show the bounding boxes to the user to prove it worked
-    cv2.imshow("AI Vision (Press any key to close)", img)
-    cv2.waitKey(0)
-    cv2.destroyAllWindows()
 
 def main():
-    """Coordinates the Hugging Face download, model loading, and OCR inference pipeline."""
+    """Coordinates the Hugging Face download and the batch testing pipeline."""
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     model, classes = download_and_load_model(device)
     
-    process_and_predict(IMAGE_PATH, model, classes, device)
+    test_directory(IMAGE_PATH, model, classes, device)
 
 if __name__ == "__main__":
     main()

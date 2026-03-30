@@ -5,3 +5,5 @@ real_test_data/
 *.zip
 train_clean_no_PsiXiBetaZeta/
 test_clean_no_PsiXiBetaZeta/
+*.png
+*.jpg

@@ -3,7 +3,8 @@
 This script uses PyTorch to train an ultra-lightweight Convolutional Neural
 Network (CNN) on a dataset of 32x32 pixel images. It utilizes Automatic
 Mixed Precision (AMP) for speed and pushes model checkpoints and training 
-metrics to the Hugging Face Hub after every validation phase.
+metrics to the Hugging Face Hub after every validation phase. This time,
+we use the Square Root Smoothing method to fix the "Paranoia" Mathematics.
 
 Attributes:
     DATA_DIR (str): Path to the directory containing processed images.
@@ -34,7 +35,7 @@ import numpy as np
 DATA_DIR = "processed_binary_data"
 MODEL_DIR = "saved_models"
 MODEL_PATH = os.path.join(MODEL_DIR, "greek_ocr_lenet_fast.pth")
-HF_REPO_ID = "huyisme-005/ancient-greek-ocr_3" # <--- UPDATE THIS!
+HF_REPO_ID = "huyisme-005/ancient-greek-ocr_4" # <--- UPDATE THIS!
 
 BATCH_SIZE = 512
 EPOCHS = 15
@@ -143,8 +144,15 @@ def main():
     num_classes = len(dataset.classes)
     
     # Avoid division by zero just in case a class has 0 samples in the split
-    class_counts = np.where(class_counts == 0, 1, class_counts) 
-    class_weights = total_samples / (num_classes * class_counts)
+    class_counts = np.where(class_counts == 0, 1, class_counts)
+
+    # NEW: Take the square root of the counts to soften the extreme penalties!
+    smoothed_counts = np.sqrt(class_counts) 
+    
+    total_samples = np.sum(smoothed_counts)
+    num_classes = len(dataset.classes)
+
+    class_weights = total_samples / (num_classes * smoothed_counts)
     
     # 4. Convert to a PyTorch tensor and send it to the GPU
     weights_tensor = torch.tensor(class_weights, dtype=torch.float32).to(device)

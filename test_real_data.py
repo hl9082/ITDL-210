@@ -160,8 +160,16 @@ def test_directory(data_dir, model, classes, device):
 
     # os.walk automatically loops through every folder and subfolder
     for root, _, files in os.walk(data_dir):
-        # Extract the folder name (which should be the true Greek letter)
-        true_class = os.path.basename(root)
+        # Clean folder names to match AI classes
+        raw_true_class = os.path.basename(root)
+        if not raw_true_class: 
+            continue
+
+        true_class = raw_true_class.replace("lower_", "").capitalize()
+
+        # Handle the Sigma edge case
+        if true_class == "Sigma":
+            true_class = "LunateSigma"
 
         for file_name in files:
             # Skip non-image files like .DS_Store or text files

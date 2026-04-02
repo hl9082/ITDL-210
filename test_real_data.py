@@ -175,7 +175,7 @@ def download_and_load_model(device):
             - classes (list of str): The list of character class names mapping to model outputs.
     """
     print("☁️ Downloading brain from Hugging Face...")
-    model_file = hf_hub_download(repo_id=HF_REPO_ID, filename="greek_ocr_lenet_fast.pth", repo_type="model")
+    model_file = hf_hub_download(repo_id=HF_REPO_ID, filename="greek_ocr_finetuned_checkpoint.pth", repo_type="model")
     
     # Load the checkpoint dictionary
     checkpoint = torch.load(model_file, map_location=device, weights_only=False)

@@ -38,7 +38,7 @@ EPOCHS = 50
 BATCH_SIZE = 32
 LEARNING_RATE = 0.0005
 IMAGE_SIZE = 32
-PATIENCE = 5
+PATIENCE = 8 #increase to 8 to give the model more time to learn
 SAVE_INTERVAL_SEC = 120  # Save to HF every 2 minutes
 
 
@@ -183,7 +183,8 @@ def load_or_resume_model(device):
         model = LeNet5(num_classes=len(classes)).to(device)
         model.load_state_dict(checkpoint['model_state_dict'])
         
-        optimizer = optim.Adam(model.parameters(), lr=LEARNING_RATE)
+        # Add weight_decay=1e-4 to penalize overfitting
+        optimizer = optim.Adam(model.parameters(), lr=LEARNING_RATE, weight_decay=1e-4)
         optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
         
         print(f"🔄 Resuming fine-tuning from Epoch {start_epoch}!")
@@ -198,7 +199,7 @@ def load_or_resume_model(device):
         
         model = LeNet5(num_classes=len(classes)).to(device)
         model.load_state_dict(checkpoint['model_state_dict'])
-        optimizer = optim.Adam(model.parameters(), lr=LEARNING_RATE)
+        optimizer = optim.Adam(model.parameters(), lr=LEARNING_RATE, weight_decay=1e-4)
         
     return model, optimizer, start_epoch, classes
 
@@ -248,6 +249,8 @@ def main():
         transforms.RandomRotation(degrees=15),       
         transforms.RandomAffine(degrees=0, translate=(0.1, 0.1)), 
         transforms.ToTensor(),
+        # RandomErasing drops random black/white boxes on the tensor to simulate damaged manuscript
+        transforms.RandomErasing(p=0.3, scale=(0.02, 0.15)),
         transforms.Normalize((0.5,), (0.5,))
     ])
 

@@ -18,6 +18,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from torchvision import transforms
+from torch.utils.data import Dataset, DataLoader
 from huggingface_hub import hf_hub_download
 from PIL import Image
 import numpy as np
@@ -76,6 +77,92 @@ class LeNet5(nn.Module):
         x = self.classifier(x)
         return x
 
+# --- 2. PyTorch Dataset ---
+class RealManuscriptTestDataset(Dataset):
+    """Custom PyTorch Dataset for loading and preprocessing real manuscript images.
+
+    Iterates through a specified root directory, cleans folder names to map exactly 
+    to the AI's learned class list, and applies domain-specific OpenCV binarization 
+    before converting images into PyTorch tensors.
+
+    Args:
+        root_dir (str): The root directory containing subfolders of character images.
+        model_classes (list of str): The exact list of class names from the trained model checkpoint.
+        transform (torchvision.transforms.Compose, optional): Transforms to apply to the PIL image.
+
+    Attributes:
+        image_paths (list of str): Absolute paths to all valid images found in the directory.
+        labels (list of int): The corresponding integer class indices for each image.
+        class_to_idx (dict): Mapping from string class names to integer indices.
+    """
+
+    def __init__(self, root_dir, model_classes, transform=None):
+        """Initializes the dataset and builds the class-to-index mapping."""
+        self.root_dir = root_dir
+        self.transform = transform
+        self.image_paths = []
+        self.labels = []
+        
+        self.class_to_idx = {cls_name: i for i, cls_name in enumerate(model_classes)}
+        
+        for folder_name in os.listdir(root_dir):
+            folder_path = os.path.join(root_dir, folder_name)
+            if not os.path.isdir(folder_path):
+                continue
+                
+            true_class = folder_name.replace("lower_", "").capitalize()
+            if true_class == "Sigma":
+                true_class = "LunateSigma"
+                
+            if true_class in self.class_to_idx:
+                label_idx = self.class_to_idx[true_class]
+                
+                for img_name in os.listdir(folder_path):
+                    if img_name.lower().endswith(('.png', '.jpg', '.jpeg')):
+                        self.image_paths.append(os.path.join(folder_path, img_name))
+                        self.labels.append(label_idx)
+
+    def __len__(self):
+        """Returns the total number of images in the dataset.
+
+        Returns:
+            int: Total image count.
+        """
+        return len(self.image_paths)
+
+    def __getitem__(self, idx):
+        """Fetches and preprocesses a single image and its label.
+
+        Applies grayscale conversion, Gaussian blur, and adaptive thresholding 
+        using OpenCV before returning the transformed tensor.
+
+        Args:
+            idx (int): The index of the item to retrieve.
+
+        Returns:
+            tuple: A tuple containing:
+                - tensor_img (torch.Tensor): The preprocessed, formatted image tensor.
+                - label (int): The integer index of the true class.
+                - img_path (str): The file path of the image for debugging purposes.
+        """
+        img_path = self.image_paths[idx]
+        
+        original_img = cv2.imread(img_path)
+        gray_img = cv2.cvtColor(original_img, cv2.COLOR_BGR2GRAY)
+        blurred = cv2.GaussianBlur(gray_img, (5, 5), 0)
+        thresh = cv2.adaptiveThreshold(
+            blurred, 255, 
+            cv2.ADAPTIVE_THRESH_GAUSSIAN_C, 
+            cv2.THRESH_BINARY_INV, 
+            15, 4  
+        )
+        
+        pil_img = Image.fromarray(thresh)
+        if self.transform:
+            tensor_img = self.transform(pil_img)
+            
+        return tensor_img, self.labels[idx], img_path
+
 def download_and_load_model(device):
     """Fetches the trained model and class mappings from Hugging Face.
 
@@ -102,109 +189,60 @@ def download_and_load_model(device):
     print("✅ Model loaded successfully!")
     return model, classes
 
-def preprocess_image(image_path):
-    """Loads and applies OpenCV preprocessing to a raw manuscript image.
+def test_pipeline(data_dir, model, classes, device):
+    """Executes the batch testing pipeline using a PyTorch DataLoader.
 
-    Converts to grayscale, applies Gaussian blur, and uses adaptive thresholding 
-    to binarize the image.
-
-    Args:
-        image_path (str): The file path to the raw image.
-
-    Returns:
-        numpy.ndarray or None: The binarized image array, or None if loading fails.
-    """
-    original_img = cv2.imread(image_path)
-    if original_img is None:
-        return None
-
-    gray_img = cv2.cvtColor(original_img, cv2.COLOR_BGR2GRAY)
-    blurred = cv2.GaussianBlur(gray_img, (5, 5), 0)
-    
-    thresh = cv2.adaptiveThreshold(
-        blurred, 255, 
-        cv2.ADAPTIVE_THRESH_GAUSSIAN_C, 
-        cv2.THRESH_BINARY_INV, 
-        15, 4  
-    )
-    return thresh
-
-
-def test_directory(data_dir, model, classes, device):
-    """Iterates through all folders and images to test model accuracy.
-
-    Assumes the directory is structured such that subfolder names represent 
-    the true class of the images within them (e.g., `data_dir/Alpha/img.png`).
+    Loads the custom dataset, processes it in batches to maximize hardware efficiency, 
+    compares network predictions against the true labels, and calculates the overall accuracy.
 
     Args:
         data_dir (str): The root directory containing image subfolders.
-        model (LeNet5): The loaded PyTorch model.
+        model (LeNet5): The loaded PyTorch model set to evaluation mode.
         classes (list of str): The list of model class names.
         device (torch.device): CPU or GPU.
+        
+    Returns:
+        None
     """
     if not os.path.exists(data_dir):
         print(f"❌ Error: The directory '{data_dir}' does not exist.")
         return
 
-    transform = transforms.Compose([
+    test_transform = transforms.Compose([
         transforms.Resize((IMAGE_SIZE, IMAGE_SIZE)),
         transforms.ToTensor(),
         transforms.Normalize((0.5,), (0.5,))
     ])
 
+    test_dataset = RealManuscriptTestDataset(data_dir, classes, transform=test_transform)
+    test_loader = DataLoader(test_dataset, batch_size=64, shuffle=False)
+
+    print("🚀 Starting Batch Processing via DataLoader...")
+    print("-" * 50)
+
     total_images = 0
     correct_predictions = 0
 
-    print("🚀 Starting Batch Processing...")
-    print("-" * 50)
+    with torch.no_grad():
+        for images, labels, paths in test_loader:
+            images = images.to(device)
+            labels = labels.to(device)
 
-    # os.walk automatically loops through every folder and subfolder
-    for root, _, files in os.walk(data_dir):
-        # Clean folder names to match AI classes
-        raw_true_class = os.path.basename(root)
-        if not raw_true_class: 
-            continue
+            outputs = model(images)
+            _, predicted_indices = torch.max(outputs, 1)
 
-        true_class = raw_true_class.replace("lower_", "").capitalize()
+            total_images += labels.size(0)
+            correct_predictions += (predicted_indices == labels).sum().item()
 
-        # Handle the Sigma edge case
-        if true_class == "Sigma":
-            true_class = "LunateSigma"
+            mismatches = predicted_indices != labels
+            if mismatches.any():
+                for i in range(len(mismatches)):
+                    if mismatches[i]:
+                        true_cls = classes[labels[i].item()]
+                        pred_cls = classes[predicted_indices[i].item()]
+                        filename = os.path.basename(paths[i])
+                        print(f"❌ Mismatch in {filename}: True='{true_cls}', AI Guessed='{pred_cls}'")
 
-        for file_name in files:
-            # Skip non-image files like .DS_Store or text files
-            if not file_name.lower().endswith(('.png', '.jpg', '.jpeg')):
-                continue
-
-            image_path = os.path.join(root, file_name)
-            
-            # 1. Preprocess
-            thresh_img = preprocess_image(image_path)
-            if thresh_img is None:
-                print(f"⚠️ Warning: Could not read {image_path}. Skipping.")
-                continue
-
-            # 2. Format for PyTorch
-            char_pil = Image.fromarray(thresh_img)
-            char_tensor = transform(char_pil).unsqueeze(0).to(device)
-
-            # 3. Predict
-            with torch.no_grad():
-                outputs = model(char_tensor)
-                _, predicted_idx = torch.max(outputs, 1)
-                predicted_class = classes[predicted_idx.item()]
-
-            # 4. Evaluate
-            total_images += 1
-            is_correct = (predicted_class == true_class)
-            if is_correct:
-                correct_predictions += 1
-            
-            # Optional: Print out misclassifications for debugging
-            if not is_correct:
-                print(f"❌ Mismatch in {file_name}: True='{true_class}', AI Guessed='{predicted_class}'")
-
-    # Final Report
     print("-" * 50)
     if total_images == 0:
         print("⚠️ No valid images found in the specified directory.")
@@ -217,11 +255,15 @@ def test_directory(data_dir, model, classes, device):
 
 
 def main():
-    """Coordinates the Hugging Face download and the batch testing pipeline."""
+    """Coordinates the Hugging Face download and the batch testing pipeline.
+
+    Automatically detects hardware accelerators (CUDA) and passes the device to 
+    the model loading and inference functions.
+    """
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     model, classes = download_and_load_model(device)
-    
-    test_directory(IMAGE_PATH, model, classes, device)
+    test_pipeline(IMAGE_PATH, model, classes, device)
+
 
 if __name__ == "__main__":
     main()

@@ -24,6 +24,11 @@ from PIL import Image
 import numpy as np
 import os
 
+#confusion matrix generation
+import matplotlib.pyplot as plt
+import seaborn as sns
+from sklearn.metrics import confusion_matrix
+
 # --- Global Configuration ---
 HF_REPO_ID = "huyisme-005/ancient-greek-ocr_4" # Your exact repo
 IMAGE_PATH = "test_clean_no_PsiXiBetaZeta/"    # <--- Put your test image path here!
@@ -162,6 +167,28 @@ class RealManuscriptTestDataset(Dataset):
             tensor_img = self.transform(pil_img)
             
         return tensor_img, self.labels[idx], img_path
+    
+def plot_confusion_matrix(true_labels, pred_labels, classes):
+    """
+    Generates and saves a visual confusion matrix.
+
+    Args:
+    - true_labels: the actual letters.
+    - pred_labels: AI predicted letters.
+    - classes: the Greek letters to predict.
+
+    Returns: 
+            None, but the function will download the .png file of a confusion matrix.
+    """
+    cm = confusion_matrix(true_labels, pred_labels, labels=classes)
+    plt.figure(figsize=(14, 12))
+    sns.heatmap(cm, annot=True, fmt='d', cmap='Blues', xticklabels=classes, yticklabels=classes)
+    plt.ylabel('Actual Letter')
+    plt.xlabel('AI Guessed Letter')
+    plt.title('Real-World Manuscript Confusion Matrix')
+    plt.xticks(rotation=45)
+    plt.savefig('real_world_confusion_matrix.png', bbox_inches='tight')
+    print("📊 Confusion matrix saved as 'real_world_confusion_matrix.png'")
 
 def download_and_load_model(device):
     """Fetches the trained model and class mappings from Hugging Face.
@@ -223,6 +250,9 @@ def test_pipeline(data_dir, model, classes, device):
     total_images = 0
     correct_predictions = 0
 
+    all_true_labels = []
+    all_pred_labels = []
+
     with torch.no_grad():
         for images, labels, paths in test_loader:
             images = images.to(device)
@@ -233,6 +263,10 @@ def test_pipeline(data_dir, model, classes, device):
 
             total_images += labels.size(0)
             correct_predictions += (predicted_indices == labels).sum().item()
+
+            # Record for Confusion Matrix
+            all_true_labels.extend([classes[lbl.item()] for lbl in labels])
+            all_pred_labels.extend([classes[pred.item()] for pred in predicted_indices])
 
             mismatches = predicted_indices != labels
             if mismatches.any():
@@ -252,6 +286,9 @@ def test_pipeline(data_dir, model, classes, device):
         print(f"Total Images Processed: {total_images}")
         print(f"Correct Predictions:    {correct_predictions}")
         print(f"Real-World Accuracy:    {accuracy:.2f}%")
+
+        # Plot and save the confusion matrix
+        plot_confusion_matrix(all_true_labels, all_pred_labels, classes)
 
 
 def main():

@@ -34,7 +34,7 @@ TRAIN_DATA_DIR = "train_clean_no_PsiXiBetaZeta"
 BASE_WEIGHTS = "greek_ocr_lenet_fast.pth"
 FINETUNE_CKPT = "greek_ocr_finetuned_checkpoint.pth"
 
-EPOCHS = 50
+EPOCHS = 100
 BATCH_SIZE = 32
 LEARNING_RATE = 0.0005
 IMAGE_SIZE = 32
@@ -243,6 +243,9 @@ def main():
     model, optimizer, start_epoch, classes = load_or_resume_model(device)
     criterion = nn.CrossEntropyLoss()
 
+    # Learning Rate Scheduler - Halves LR if Val Loss stops improving
+    scheduler = optim.lr_scheduler.ReduceLROnPlateau(optimizer, mode='min', factor=0.5, patience=3)
+
     # 2. Data Preparation (Train & Val Split for Early Stopping)
     train_transform = transforms.Compose([
         transforms.Resize((IMAGE_SIZE, IMAGE_SIZE)),
@@ -305,8 +308,12 @@ def main():
                 
         avg_train_loss = running_loss / len(train_loader)
         avg_val_loss = val_loss / len(val_loader)
+
+        # Step the scheduler based on validation loss
+        scheduler.step(avg_val_loss)
+        current_lr = optimizer.param_groups[0]['lr']
         
-        print(f"Epoch [{epoch+1}/{EPOCHS}] | Train Loss: {avg_train_loss:.4f} | Val Loss: {avg_val_loss:.4f}")
+        print(f"Epoch [{epoch+1}/{EPOCHS}] | Train Loss: {avg_train_loss:.4f} | Val Loss: {avg_val_loss:.4f} | LR: {current_lr:.6f}")
         
         # Check Early Stopping
         early_stopping(avg_val_loss)

@@ -193,12 +193,16 @@ def main():
     optimizer = optim.Adam(model.parameters(), lr=LEARNING_RATE)
     criterion = nn.CrossEntropyLoss()
 
+    # Initialize Early Stopping
+    early_stopping = EarlyStopping(patience=PATIENCE)
+
     # Mild augmentations for synthetic data
     train_transform = transforms.Compose([
         transforms.Resize((IMAGE_SIZE, IMAGE_SIZE)),
         transforms.ToTensor(),
         transforms.Normalize((0.5,), (0.5,))
     ])
+
 
     full_dataset = SyntheticDataset(TRAIN_DATA_DIR, classes, transform=train_transform)
     train_size = int(0.8 * len(full_dataset))
@@ -236,6 +240,15 @@ def main():
         avg_val_loss = val_loss / len(val_loader)
         
         print(f"Epoch [{epoch+1}/{EPOCHS}] | Train Loss: {avg_train_loss:.4f} | Val Loss: {avg_val_loss:.4f}")
+
+
+        early_stopping(avg_val_loss)
+        if early_stopping.best_loss == avg_val_loss:
+             best_epoch = epoch + 1
+             
+        if early_stopping.early_stop:
+            print("🛑 Network has memorized synthetic data. Early stopping triggered to prevent font overfitting.")
+            break
 
     save_checkpoint_to_hf(model, optimizer, EPOCHS, classes)
     print("🎉 Pre-Training Complete!")

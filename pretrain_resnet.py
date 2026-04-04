@@ -27,6 +27,7 @@ EPOCHS = 30
 BATCH_SIZE = 32
 LEARNING_RATE = 0.001
 IMAGE_SIZE = 128
+PATIENCE = 3  # Stops training if validation loss doesn't improve for 3 epochs
 
 
 class ResNet18OCR(nn.Module):

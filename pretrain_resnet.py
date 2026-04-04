@@ -213,6 +213,9 @@ def main():
     val_loader = DataLoader(val_dataset, batch_size=BATCH_SIZE, shuffle=False)
 
     print("🚀 Starting Pre-training on Synthetic Data...")
+
+    # Initialize infinite loss to guarantee the first epoch saves
+    best_val_loss = float('inf')
     
     for epoch in range(EPOCHS):
         model.train()
@@ -241,16 +244,20 @@ def main():
         
         print(f"Epoch [{epoch+1}/{EPOCHS}] | Train Loss: {avg_train_loss:.4f} | Val Loss: {avg_val_loss:.4f}")
 
+        # Dynamic Checkpoint Trigger
+        if avg_val_loss < best_val_loss:
+            print(f"   🌟 Validation loss improved from {best_val_loss:.4f} to {avg_val_loss:.4f}!")
+            best_val_loss = avg_val_loss
+            save_checkpoint_to_hf(model, optimizer, epoch + 1, classes)
 
         early_stopping(avg_val_loss)
-        if early_stopping.best_loss == avg_val_loss:
-             best_epoch = epoch + 1
+        
              
         if early_stopping.early_stop:
             print("🛑 Network has memorized synthetic data. Early stopping triggered to prevent font overfitting.")
             break
 
-    save_checkpoint_to_hf(model, optimizer, EPOCHS, classes)
+    
     print("🎉 Pre-Training Complete!")
 
 if __name__ == "__main__":

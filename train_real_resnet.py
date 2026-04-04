@@ -1,8 +1,8 @@
-"""Tests a fine-tuned ResNet-18 model against real manuscripts.
+"""Fine-tunes a pre-trained ResNet-18 model on real manuscript data.
 
-This script fetches the fine-tuned ResNet-18 weights from the Hugging Face Hub, 
-runs batch inference via a DataLoader, evaluates accuracy, and outputs a 
-Seaborn heat map to visualize character confusions.
+This script downloads the synthetic pre-trained ResNet-18 weights and applies
+transfer learning using heavy spatial and pixel-level augmentations. It includes
+a dynamic learning rate scheduler and EARLY STOPPING to prevent overfitting.
 
 Author: Huy Le (hl9082)
 """
@@ -11,29 +11,31 @@ import os
 import cv2
 import torch
 import torch.nn as nn
+import torch.optim as optim
+from torch.utils.data import Dataset, DataLoader, random_split
 from torchvision import transforms, models
-from torch.utils.data import Dataset, DataLoader
-from huggingface_hub import hf_hub_download
+from huggingface_hub import hf_hub_download, HfApi
 from PIL import Image
-import matplotlib.pyplot as plt
-import seaborn as sns
-from sklearn.metrics import confusion_matrix
 
-# --- Global Configuration ---
-HF_REPO_ID = "huyisme-005/ancient-greek-ocr_4" 
-IMAGE_PATH = "test_clean_no_PsiXiBetaZeta/"    
+# --- Configuration ---
+# Updated to your new repository!
+HF_REPO_ID = "huyisme-005/ancient-greek-ocr-resnet18"
+TRAIN_DATA_DIR = "train_clean_no_PsiXiBetaZeta"
+BASE_WEIGHTS_CKPT = "resnet_greek_ocr_base.pth"
 FINETUNE_CKPT = "resnet_greek_ocr_finetuned.pth"
+
+EPOCHS = 100
+BATCH_SIZE = 16  
+LEARNING_RATE = 0.0005
 IMAGE_SIZE = 128
+PATIENCE = 8  # How many epochs Early Stopping will wait
 
 
 class ResNet18OCR(nn.Module):
-    """A customized ResNet-18 model for grayscale character recognition."""
     def __init__(self, num_classes):
         super(ResNet18OCR, self).__init__()
         self.resnet = models.resnet18(weights=None)
-        self.resnet.conv1 = nn.Conv2d(
-            1, 64, kernel_size=7, stride=2, padding=3, bias=False
-        )
+        self.resnet.conv1 = nn.Conv2d(1, 64, kernel_size=7, stride=2, padding=3, bias=False)
         num_ftrs = self.resnet.fc.in_features
         self.resnet.fc = nn.Linear(num_ftrs, num_classes)
 
@@ -41,8 +43,7 @@ class ResNet18OCR(nn.Module):
         return self.resnet(x)
 
 
-class RealManuscriptTestDataset(Dataset):
-    """Custom PyTorch Dataset for loading and preprocessing real manuscript images."""
+class RealManuscriptDataset(Dataset):
     def __init__(self, root_dir, model_classes, transform=None):
         self.root_dir = root_dir
         self.transform = transform
@@ -74,95 +75,162 @@ class RealManuscriptTestDataset(Dataset):
         original_img = cv2.imread(img_path)
         gray_img = cv2.cvtColor(original_img, cv2.COLOR_BGR2GRAY)
         blurred = cv2.GaussianBlur(gray_img, (5, 5), 0)
+        
+        # Adaptive thresholding for messy papyrus
         thresh = cv2.adaptiveThreshold(
-            blurred, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C, cv2.THRESH_BINARY_INV, 15, 4)
+            blurred, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C, cv2.THRESH_BINARY_INV, 15, 4
+        )
         
         pil_img = Image.fromarray(thresh)
         if self.transform:
             tensor_img = self.transform(pil_img)
             
-        return tensor_img, self.labels[idx], img_path
+        return tensor_img, self.labels[idx]
 
 
-def plot_confusion_matrix(true_labels, pred_labels, classes):
-    """Generates and saves a visual confusion matrix."""
-    cm = confusion_matrix(true_labels, pred_labels, labels=classes)
-    plt.figure(figsize=(14, 12))
-    sns.heatmap(cm, annot=True, fmt='d', cmap='Blues', xticklabels=classes, yticklabels=classes)
-    plt.ylabel('Actual Letter')
-    plt.xlabel('AI Guessed Letter')
-    plt.title('ResNet-18 Real-World Confusion Matrix')
-    plt.xticks(rotation=45)
-    plt.savefig('resnet_real_world_confusion_matrix.png', bbox_inches='tight')
-    print("📊 Confusion matrix saved as 'resnet_real_world_confusion_matrix.png'")
+# ==========================================
+# 1. EARLY STOPPING CLASS DEFINITION
+# ==========================================
+class EarlyStopping:
+    def __init__(self, patience=5, min_delta=0.0):
+        self.patience = patience
+        self.min_delta = min_delta
+        self.counter = 0
+        self.best_loss = None
+        self.early_stop = False
+
+    def __call__(self, val_loss):
+        if self.best_loss is None:
+            self.best_loss = val_loss
+        elif val_loss > self.best_loss - self.min_delta:
+            self.counter += 1
+            if self.counter >= self.patience:
+                self.early_stop = True
+        else:
+            self.best_loss = val_loss
+            self.counter = 0
 
 
-def download_and_load_model(device):
-    print("☁️ Downloading fine-tuned ResNet-18 brain from Hugging Face...")
-    model_file = hf_hub_download(repo_id=HF_REPO_ID, filename=FINETUNE_CKPT, repo_type="model")
-    
+def load_base_model(device):
+    print("☁️ Pulling Pre-trained Base Model from Hugging Face...")
+    model_file = hf_hub_download(repo_id=HF_REPO_ID, filename=BASE_WEIGHTS_CKPT)
     checkpoint = torch.load(model_file, map_location=device, weights_only=False)
     classes = checkpoint['classes']
     
     model = ResNet18OCR(num_classes=len(classes)).to(device)
     model.load_state_dict(checkpoint['model_state_dict'])
-    model.eval() 
     
-    print("✅ Model loaded successfully!")
-    return model, classes
+    optimizer = optim.Adam(model.parameters(), lr=LEARNING_RATE, weight_decay=1e-4)
+    return model, optimizer, classes
 
 
-def test_pipeline(data_dir, model, classes, device):
-    if not os.path.exists(data_dir):
-        print(f"❌ Error: The directory '{data_dir}' does not exist.")
-        return
+def save_checkpoint_to_hf(model, optimizer, epoch, classes):
+    print(f"\n💾 Saving Fine-Tuned Checkpoint at Epoch {epoch}...")
+    torch.save({
+        'epoch': epoch,
+        'model_state_dict': model.state_dict(),
+        'optimizer_state_dict': optimizer.state_dict(),
+        'classes': classes
+    }, FINETUNE_CKPT)
 
-    test_transform = transforms.Compose([
-        transforms.Resize((IMAGE_SIZE, IMAGE_SIZE)),
-        transforms.ToTensor(),
-        transforms.Normalize((0.5,), (0.5,))
-    ])
-
-    test_dataset = RealManuscriptTestDataset(data_dir, classes, transform=test_transform)
-    test_loader = DataLoader(test_dataset, batch_size=32, shuffle=False)
-
-    print("🚀 Starting Batch Processing via DataLoader...")
-    print("-" * 50)
-
-    total_images = 0
-    correct_predictions = 0
-    all_true_labels = []
-    all_pred_labels = []
-
-    with torch.no_grad():
-        for images, labels, paths in test_loader:
-            images = images.to(device)
-            labels = labels.to(device)
-
-            outputs = model(images)
-            _, predicted_indices = torch.max(outputs, 1)
-
-            total_images += labels.size(0)
-            correct_predictions += (predicted_indices == labels).sum().item()
-
-            all_true_labels.extend([classes[lbl.item()] for lbl in labels])
-            all_pred_labels.extend([classes[pred.item()] for pred in predicted_indices])
-
-    print("-" * 50)
-    if total_images > 0:
-        accuracy = (correct_predictions / total_images) * 100
-        print(f"🏆 BATCH TESTING COMPLETE")
-        print(f"Total Images Processed: {total_images}")
-        print(f"Correct Predictions:    {correct_predictions}")
-        print(f"Real-World Accuracy:    {accuracy:.2f}%")
-        
-        plot_confusion_matrix(all_true_labels, all_pred_labels, classes)
+    try:
+        api = HfApi()
+        api.upload_file(
+            path_or_fileobj=FINETUNE_CKPT,
+            path_in_repo=FINETUNE_CKPT,
+            repo_id=HF_REPO_ID,
+            repo_type="model",
+            commit_message=f"Fine-tuned ResNet-18 at Epoch {epoch}"
+        )
+    except Exception as e:
+        print(f"❌ Failed to upload checkpoint: {e}\n")
 
 
 def main():
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    model, classes = download_and_load_model(device)
-    test_pipeline(IMAGE_PATH, model, classes, device)
+    model, optimizer, classes = load_base_model(device)
+    criterion = nn.CrossEntropyLoss()
+
+    scheduler = optim.lr_scheduler.ReduceLROnPlateau(optimizer, mode='min', factor=0.5, patience=3)
+
+    # Heavy augmentations to simulate manuscript damage
+    train_transform = transforms.Compose([
+        transforms.Resize((IMAGE_SIZE, IMAGE_SIZE)),
+        transforms.RandomRotation(degrees=20),       
+        transforms.RandomAffine(degrees=0, translate=(0.1, 0.1), scale=(0.85, 1.15), shear=10), 
+        transforms.ToTensor(),
+        transforms.RandomErasing(p=0.3, scale=(0.02, 0.15)), 
+        transforms.Normalize((0.5,), (0.5,))
+    ])
+
+    full_dataset = RealManuscriptDataset(TRAIN_DATA_DIR, classes, transform=train_transform)
+    train_size = int(0.8 * len(full_dataset))
+    val_size = len(full_dataset) - train_size
+    train_dataset, val_dataset = random_split(full_dataset, [train_size, val_size])
+
+    train_loader = DataLoader(train_dataset, batch_size=BATCH_SIZE, shuffle=True)
+    val_loader = DataLoader(val_dataset, batch_size=BATCH_SIZE, shuffle=False)
+
+    # ==========================================
+    # 2. INSTANTIATING EARLY STOPPING
+    # ==========================================
+    early_stopping = EarlyStopping(patience=PATIENCE)
+
+    print(f"🚀 Starting Transfer Learning on Real Data...")
+
+    best_val_loss = float('inf')
+    
+     
+
+    for epoch in range(EPOCHS):
+        model.train()
+        running_loss = 0.0
+        
+        for images, labels in train_loader:
+            images, labels = images.to(device), labels.to(device)
+            optimizer.zero_grad()
+            outputs = model(images)
+            loss = criterion(outputs, labels)
+            loss.backward()
+            optimizer.step()
+            running_loss += loss.item()
+
+        model.eval()
+        val_loss = 0.0
+        with torch.no_grad():
+            for val_images, val_labels in val_loader:
+                val_images, val_labels = val_images.to(device), val_labels.to(device)
+                val_outputs = model(val_images)
+                loss = criterion(val_outputs, val_labels)
+                val_loss += loss.item()
+                
+        avg_train_loss = running_loss / len(train_loader)
+        avg_val_loss = val_loss / len(val_loader)
+        
+        scheduler.step(avg_val_loss)
+        current_lr = optimizer.param_groups[0]['lr']
+        
+        print(f"Epoch [{epoch+1}/{EPOCHS}] | Train: {avg_train_loss:.4f} | Val: {avg_val_loss:.4f} | LR: {current_lr:.6f}")
+        
+        # Dynamic Checkpoint Trigger
+        if avg_val_loss < best_val_loss:
+            print(f"   🌟 Validation loss improved from {best_val_loss:.4f} to {avg_val_loss:.4f}!")
+            best_val_loss = avg_val_loss
+            save_checkpoint_to_hf(model, optimizer, epoch + 1, classes)
+
+        # ==========================================
+        # 3. TRIGGERING EARLY STOPPING LOGIC
+        # ==========================================
+        early_stopping(avg_val_loss)
+        
+         
+             
+        if early_stopping.early_stop:
+            print("🛑 Overfitting detected on real manuscript data. Early stopping triggered.")
+            break
+
+     
+    print("🎉 Fine-Tuning Complete!")
 
 if __name__ == "__main__":
     main()

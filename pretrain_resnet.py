@@ -23,7 +23,7 @@ HF_REPO_ID = "huyisme-005/ancient-greek-ocr-resnet18"
 TRAIN_DATA_DIR = "processed_binary_data"  # Replace with your synthetic folder name
 BASE_WEIGHTS_CKPT = "resnet_greek_ocr_base.pth"
 
-EPOCHS = 20
+EPOCHS = 30
 BATCH_SIZE = 32
 LEARNING_RATE = 0.001
 IMAGE_SIZE = 128

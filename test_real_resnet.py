@@ -17,7 +17,7 @@ from huggingface_hub import hf_hub_download
 from PIL import Image
 import matplotlib.pyplot as plt
 import seaborn as sns
-from sklearn.metrics import confusion_matrix
+from sklearn.metrics import confusion_matrix, classification_report
 
 # --- Global Configuration ---
 # Updated to your new ResNet-18 repository
@@ -159,7 +159,13 @@ def test_pipeline(data_dir, model, classes, device):
         print(f"Total Images Processed: {total_images}")
         print(f"Correct Predictions:    {correct_predictions}")
         print(f"Real-World Accuracy:    {accuracy:.2f}%")
-        
+        print("\n======================================================")
+        print("🏆 FINAL CLASSIFICATION REPORT (Precision, Recall, F1)")
+        print("======================================================")
+        # Scikit-learn handles all the complex math for us!
+        report = classification_report(all_true_labels, all_pred_labels, target_names=classes)
+        print(report)
+        # Calculate Advanced Metrics
         plot_confusion_matrix(all_true_labels, all_pred_labels, classes)
 
 

@@ -15,14 +15,18 @@ import torch.nn as nn
 import torch.optim as optim
 from torch.utils.data import Dataset, DataLoader, random_split
 from torchvision import transforms, models
-from huggingface_hub import HfApi
+from huggingface_hub import HfApi, hf_hub_download
 from PIL import Image
 from tqdm import tqdm
+from sklearn.metrics import precision_recall_fscore_support, accuracy_score
+import json
+import gc
 
 # --- Configuration ---
 HF_REPO_ID = "huyisme-005/ancient-greek-ocr-resnet18"
 TRAIN_DATA_DIR = "processed_binary_data"  # Replace with your synthetic folder name
 BASE_WEIGHTS_CKPT = "resnet_greek_ocr_base.pth"
+METRICS_FILE = "base_metrics.json"
 
 EPOCHS = 30
 BATCH_SIZE = 32
@@ -134,21 +138,17 @@ class EarlyStopping:
         self.patience = patience
         self.min_delta = min_delta
         self.counter = 0
-        self.best_loss = None
         self.early_stop = False
 
-    def __call__(self, val_loss):
-        if self.best_loss is None:
-            self.best_loss = val_loss
-        elif val_loss > self.best_loss - self.min_delta:
+    def __call__(self, val_loss, best_loss):
+        if val_loss > best_loss - self.min_delta:
             self.counter += 1
             if self.counter >= self.patience:
                 self.early_stop = True
         else:
-            self.best_loss = val_loss
             self.counter = 0
 
-def save_checkpoint_to_hf(model, optimizer, epoch, classes):
+def save_checkpoint_to_hf(model, optimizer, epoch, classes, best_val_loss, metrics):
     """Saves the model state and uploads it to the Hugging Face Hub.
 
     Args:
@@ -162,8 +162,13 @@ def save_checkpoint_to_hf(model, optimizer, epoch, classes):
         'epoch': epoch,
         'model_state_dict': model.state_dict(),
         'optimizer_state_dict': optimizer.state_dict(),
-        'classes': classes
+        'classes': classes,
+        'best_val_loss': best_val_loss
     }, BASE_WEIGHTS_CKPT)
+
+    # Save Metrics JSON
+    with open(METRICS_FILE, 'w') as f:
+        json.dump(metrics, f, indent=4)
 
     try:
         api = HfApi()
@@ -174,6 +179,16 @@ def save_checkpoint_to_hf(model, optimizer, epoch, classes):
             repo_type="model",
             commit_message="Uploading Pre-trained ResNet-18 Base Model"
         )
+
+        # Upload metrics
+        api.upload_file(
+            path_or_fileobj=METRICS_FILE,
+            path_in_repo=METRICS_FILE,
+            repo_id=HF_REPO_ID,
+            repo_type="model",
+            commit_message=f"Auto-push: Base Metrics at Epoch {epoch}"
+        )
+
         print("✅ Base Model uploaded successfully!\n")
     except Exception as e:
         print(f"❌ Failed to upload checkpoint to HF: {e}\n")
@@ -193,6 +208,21 @@ def main():
     model = ResNet18OCR(num_classes=len(classes)).to(device)
     optimizer = optim.Adam(model.parameters(), lr=LEARNING_RATE)
     criterion = nn.CrossEntropyLoss()
+
+    # --- Resume Training Logic ---
+    start_epoch = 0
+    best_val_loss = float('inf')
+    try:
+        print("☁️ Checking for existing base checkpoint to resume...")
+        model_file = hf_hub_download(repo_id=HF_REPO_ID, filename=BASE_WEIGHTS_CKPT)
+        checkpoint = torch.load(model_file, map_location=device, weights_only=False)
+        model.load_state_dict(checkpoint['model_state_dict'])
+        optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
+        start_epoch = checkpoint.get('epoch', 0)
+        best_val_loss = checkpoint.get('best_val_loss', float('inf'))
+        print(f"✅ Resuming from Epoch {start_epoch} (Previous Best Loss: {best_val_loss:.4f})")
+    except Exception:
+        print("ℹ️ No existing checkpoint found. Starting pre-training from scratch.")
 
     # Initialize Early Stopping
     early_stopping = EarlyStopping(patience=PATIENCE)
@@ -236,9 +266,12 @@ def main():
 
             # Update the progress bar text with the live loss
             train_bar.set_postfix(loss=loss.item())
+            gc.collect()
 
         model.eval()
         val_loss = 0.0
+
+        all_preds, all_labels = [], []
 
         # 2. Wrap the val_loader with tqdm
         val_bar = tqdm(val_loader, desc=f"Epoch {epoch+1}/{EPOCHS} [Val]")
@@ -249,20 +282,39 @@ def main():
                 val_outputs = model(val_images)
                 loss = criterion(val_outputs, val_labels)
                 val_loss += loss.item()
+                _, preds = torch.max(val_outputs, 1)
+                all_preds.extend(preds.cpu().numpy())
+                all_labels.extend(val_labels.cpu().numpy())
                 val_bar.set_postfix(loss=loss.item())
                 
         avg_train_loss = running_loss / len(train_loader)
         avg_val_loss = val_loss / len(val_loader)
+
+        # Calculate Advanced Metrics
+        acc = accuracy_score(all_labels, all_preds)
+        precision, recall, f1, _ = precision_recall_fscore_support(
+            all_labels, all_preds, average='macro', zero_division=0)
         
-        print(f"Epoch [{epoch+1}/{EPOCHS}] | Train Loss: {avg_train_loss:.4f} | Val Loss: {avg_val_loss:.4f}")
+        print(f"\n Metrics -> Train Loss: {avg_train_loss:.4f} | Val Loss: {avg_val_loss:.4f}")
+        print(f"\n Accuracy: {acc:.4f} | Precision: {precision:.4f} | Recall: {recall:.4f} | F1: {f1:.4f}")
+        
+        
 
         # Dynamic Checkpoint Trigger
         if avg_val_loss < best_val_loss:
             print(f"   🌟 Validation loss improved from {best_val_loss:.4f} to {avg_val_loss:.4f}!")
             best_val_loss = avg_val_loss
-            save_checkpoint_to_hf(model, optimizer, epoch + 1, classes)
+            metrics_dict = {
+                "epoch": epoch + 1,
+                "val_loss": avg_val_loss,
+                "accuracy": acc,
+                "precision": precision,
+                "recall": recall,
+                "f1": f1
+            }
+            save_checkpoint_to_hf(model, optimizer, epoch + 1, classes, best_val_loss, metrics_dict)
 
-        early_stopping(avg_val_loss)
+        early_stopping(avg_val_loss, best_val_loss)
         
              
         if early_stopping.early_stop:

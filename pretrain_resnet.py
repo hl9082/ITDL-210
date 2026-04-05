@@ -197,6 +197,7 @@ def save_checkpoint_to_hf(model, optimizer, epoch, classes, best_val_loss, metri
 def main():
     """Main execution function to initialize and train the base model."""
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    torch.backends.cudnn.benchmark = True
     
     # Define classes based on your earlier LeNet-5 structure
     classes = [
@@ -240,8 +241,8 @@ def main():
     val_size = len(full_dataset) - train_size
     train_dataset, val_dataset = random_split(full_dataset, [train_size, val_size])
 
-    train_loader = DataLoader(train_dataset, batch_size=BATCH_SIZE, shuffle=True)
-    val_loader = DataLoader(val_dataset, batch_size=BATCH_SIZE, shuffle=False)
+    train_loader = DataLoader(train_dataset, batch_size=BATCH_SIZE, shuffle=True, num_workers=2, pin_memory=True)
+    val_loader = DataLoader(val_dataset, batch_size=BATCH_SIZE, shuffle=False, num_workers=2, pin_memory=True)
 
     print("🚀 Starting Pre-training on Synthetic Data...")
 

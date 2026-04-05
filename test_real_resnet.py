@@ -128,7 +128,7 @@ def test_pipeline(data_dir, model, classes, device):
     ])
 
     test_dataset = RealManuscriptTestDataset(data_dir, classes, transform=test_transform)
-    test_loader = DataLoader(test_dataset, batch_size=32, shuffle=False)
+    test_loader = DataLoader(test_dataset, batch_size=32, shuffle=False, num_workers=2, pin_memory=True)
 
     print("🚀 Starting Batch Processing via DataLoader...")
     print("-" * 50)
@@ -171,6 +171,7 @@ def test_pipeline(data_dir, model, classes, device):
 
 def main():
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    torch.backends.cudnn.benchmark = True
     model, classes = download_and_load_model(device)
     test_pipeline(IMAGE_PATH, model, classes, device)
 

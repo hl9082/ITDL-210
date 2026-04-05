@@ -17,6 +17,7 @@ from torch.utils.data import Dataset, DataLoader, random_split
 from torchvision import transforms, models
 from huggingface_hub import HfApi
 from PIL import Image
+from tqdm import tqdm
 
 # --- Configuration ---
 HF_REPO_ID = "huyisme-005/ancient-greek-ocr-resnet18"
@@ -205,7 +206,7 @@ def main():
 
 
     full_dataset = SyntheticDataset(TRAIN_DATA_DIR, classes, transform=train_transform)
-    train_size = int(0.8 * len(full_dataset))
+    train_size = int(0.9 * len(full_dataset))
     val_size = len(full_dataset) - train_size
     train_dataset, val_dataset = random_split(full_dataset, [train_size, val_size])
 
@@ -220,6 +221,9 @@ def main():
     for epoch in range(EPOCHS):
         model.train()
         running_loss = 0.0
+
+        # 1. Wrap the train_loader with tqdm
+        train_bar = tqdm(train_loader, desc=f"Epoch {epoch+1}/{EPOCHS} [Train]")
         
         for images, labels in train_loader:
             images, labels = images.to(device), labels.to(device)
@@ -230,14 +234,22 @@ def main():
             optimizer.step()
             running_loss += loss.item()
 
+            # Update the progress bar text with the live loss
+            train_bar.set_postfix(loss=loss.item())
+
         model.eval()
         val_loss = 0.0
+
+        # 2. Wrap the val_loader with tqdm
+        val_bar = tqdm(val_loader, desc=f"Epoch {epoch+1}/{EPOCHS} [Val]")
+
         with torch.no_grad():
             for val_images, val_labels in val_loader:
                 val_images, val_labels = val_images.to(device), val_labels.to(device)
                 val_outputs = model(val_images)
                 loss = criterion(val_outputs, val_labels)
                 val_loss += loss.item()
+                val_bar.set_postfix(loss=loss.item())
                 
         avg_train_loss = running_loss / len(train_loader)
         avg_val_loss = val_loss / len(val_loader)

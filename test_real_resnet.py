@@ -22,7 +22,7 @@ cv2.setNumThreads(0)
 # --- Global Configuration ---
 # Updated to your new ResNet-18 repository
 HF_REPO_ID = "huyisme-005/ancient-greek-ocr-resnet18" 
-IMAGE_PATH = "test_clean_no_PsiXiBetaZeta"    
+# IMAGE_PATH = "test_clean_no_PsiXiBetaZeta"    
 FINETUNE_CKPT = "resnet_greek_ocr_finetuned.pth"
 IMAGE_SIZE = 128
 
@@ -57,10 +57,8 @@ def download_and_load_model(device):
     return model, classes
 
 
-def test_pipeline(data_dir, model, classes, device):
-    if not os.path.exists(data_dir):
-        print(f"❌ Error: The directory '{data_dir}' does not exist.")
-        return
+def test_pipeline(model, classes, device):
+    
 
     # Only basic resizing and normalization for testing (no data augmentation)
     test_transform = transforms.Compose([
@@ -123,7 +121,7 @@ def main():
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     torch.backends.cudnn.benchmark = True
     model, classes = download_and_load_model(device)
-    test_pipeline(IMAGE_PATH, model, classes, device)
+    test_pipeline(model, classes, device)
 
 if __name__ == "__main__":
     main()

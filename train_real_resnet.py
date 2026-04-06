@@ -17,7 +17,7 @@ from huggingface_hub import hf_hub_download, HfApi
 from tqdm import tqdm
 from sklearn.metrics import precision_recall_fscore_support, accuracy_score
 import json
-import gc
+# import gc
 from pretrain_resnet import ResNet18OCR, RAMDataset, EarlyStopping
 
 cv2.setNumThreads(0)
@@ -178,7 +178,7 @@ def main():
             optimizer.step()
             running_loss += loss.item()
             train_bar.set_postfix(loss=loss.item())
-            gc.collect()
+            # gc.collect()
 
         model.eval()
         val_loss = 0.0

@@ -18,7 +18,7 @@ from huggingface_hub import HfApi, hf_hub_download
 from tqdm import tqdm
 from sklearn.metrics import precision_recall_fscore_support, accuracy_score
 import json
-import gc
+# import gc
 
 cv2.setNumThreads(0) #no parallel processing here
 
@@ -238,7 +238,7 @@ def main():
 
             # Update the progress bar text with the live loss
             train_bar.set_postfix(loss=loss.item())
-            gc.collect()
+            # gc.collect()
 
         model.eval()
         val_loss = 0.0

@@ -69,64 +69,26 @@ class ResNet18OCR(nn.Module):
         return self.resnet(x)
 
 
-class SyntheticDataset(Dataset):
-    """Custom Dataset for loading clean synthetic Greek characters.
-
-    Args:
-        root_dir (str): The root directory containing class folders.
-        model_classes (list[str]): An ordered list of class names.
-        transform (torchvision.transforms.Compose, optional): Augmentations.
-    """
-
-    def __init__(self, root_dir, model_classes, transform=None):
-        self.root_dir = root_dir
+class RAMDataset(Dataset):
+    def __init__(self, pt_file_path, transform=None):
+        print("🧠 Loading dataset into RAM... please wait a few seconds.")
+        data = torch.load(pt_file_path, weights_only=False)
+        self.images = data['images']
+        self.labels = data['labels']
         self.transform = transform
-        self.image_paths = []
-        self.labels = []
-        self.class_to_idx = {cls_name: i for i, cls_name in enumerate(model_classes)}
-        
-        for folder_name in os.listdir(root_dir):
-            folder_path = os.path.join(root_dir, folder_name)
-            if not os.path.isdir(folder_path): 
-                continue
-                
-            true_class = folder_name.replace("lower_", "").capitalize()
-            if true_class == "Sigma": 
-                true_class = "LunateSigma"
-                
-            if true_class in self.class_to_idx:
-                label_idx = self.class_to_idx[true_class]
-                for img_name in os.listdir(folder_path):
-                    if img_name.lower().endswith(('.png', '.jpg', '.jpeg')):
-                        self.image_paths.append(os.path.join(folder_path, img_name))
-                        self.labels.append(label_idx)
+        print(f"✅ Loaded {len(self.images)} images into memory!")
 
     def __len__(self):
-        """Returns the total number of samples in the dataset."""
-        return len(self.image_paths)
+        return len(self.images)
 
     def __getitem__(self, idx):
-        """Fetches and preprocesses a single image and its label.
-
-        Args:
-            idx (int): The index of the item.
-
-        Returns:
-            tuple: (tensor_img, label_idx)
-        """
-        img_path = self.image_paths[idx]
-        original_img = cv2.imread(img_path)
-        gray_img = cv2.cvtColor(original_img, cv2.COLOR_BGR2GRAY)
-        
-        # Simple binarization for synthetic data (this ensures we don't inadvertently binarize our already
-        # binarized images)
-        _, thresh = cv2.threshold(gray_img, 128, 255, cv2.THRESH_BINARY)
-        
-        pil_img = Image.fromarray(thresh)
+        image = self.images[idx]
+        label = self.labels[idx]
+        # Convert uint8 to float32 [0.0, 1.0] 
+        image = image.to(torch.float32) / 255.0
         if self.transform:
-            tensor_img = self.transform(pil_img)
-            
-        return tensor_img, self.labels[idx]
+            image = self.transform(image)
+        return image, label
 
 class EarlyStopping:
     """Monitors validation loss and halts training to prevent overfitting.
@@ -233,12 +195,21 @@ def main():
     # Mild augmentations for synthetic data
     train_transform = transforms.Compose([
         transforms.Resize((IMAGE_SIZE, IMAGE_SIZE)),
-        transforms.ToTensor(),
+        # transforms.ToTensor(),
         transforms.Normalize((0.5,), (0.5,))
     ])
 
+    # 2. DOWNLOAD DATASET FROM HF
+    print("☁️ Downloading packed synthetic dataset from Hugging Face...")
+    pt_file_path = hf_hub_download(
+        repo_id="huyisme-005/greek-ocr-synthetic-pt", # Make sure this matches your repo!
+        filename="dataset_ram.pt", 
+        repo_type="dataset"
+    )
 
-    full_dataset = SyntheticDataset(TRAIN_DATA_DIR, classes, transform=train_transform)
+
+    # 3. INITIALIZE DATALOADERS
+    full_dataset = RAMDataset(pt_file_path, transform=train_transform)
     train_size = int(0.9 * len(full_dataset))
     val_size = len(full_dataset) - train_size
     train_dataset, val_dataset = random_split(full_dataset, [train_size, val_size])

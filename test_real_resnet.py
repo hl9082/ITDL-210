@@ -129,7 +129,7 @@ def test_pipeline(data_dir, model, classes, device):
     ])
 
     test_dataset = RealManuscriptTestDataset(data_dir, classes, transform=test_transform)
-    test_loader = DataLoader(test_dataset, batch_size=32, shuffle=False, num_workers=2, pin_memory=True)
+    test_loader = DataLoader(test_dataset, batch_size=32, shuffle=False, num_workers=0, pin_memory=True)
 
     print("🚀 Starting Batch Processing via DataLoader...")
     print("-" * 50)

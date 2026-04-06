@@ -21,6 +21,8 @@ from sklearn.metrics import precision_recall_fscore_support, accuracy_score
 import json
 import gc
 
+cv2.setNumThreads(0)
+
 # --- Configuration ---
 # Updated to your new repository!
 HF_REPO_ID = "huyisme-005/ancient-greek-ocr-resnet18"

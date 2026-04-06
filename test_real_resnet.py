@@ -19,6 +19,7 @@ import matplotlib.pyplot as plt
 import seaborn as sns
 from sklearn.metrics import confusion_matrix, classification_report
 
+cv2.setNumThreads(0)
 # --- Global Configuration ---
 # Updated to your new ResNet-18 repository
 HF_REPO_ID = "huyisme-005/ancient-greek-ocr-resnet18" 

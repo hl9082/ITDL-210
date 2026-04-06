@@ -22,6 +22,8 @@ from sklearn.metrics import precision_recall_fscore_support, accuracy_score
 import json
 import gc
 
+cv2.setNumThreads(0) #no parallel processing here
+
 # --- Configuration ---
 HF_REPO_ID = "huyisme-005/ancient-greek-ocr-resnet18"
 TRAIN_DATA_DIR = "processed_binary_data"  # Replace with your synthetic folder name

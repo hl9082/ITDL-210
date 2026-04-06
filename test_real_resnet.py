@@ -11,13 +11,12 @@ import os
 import cv2
 import torch
 from torchvision import transforms
-from torch.utils.data import Dataset, DataLoader
+from torch.utils.data import DataLoader
 from huggingface_hub import hf_hub_download
-from PIL import Image
 import matplotlib.pyplot as plt
 import seaborn as sns
 from sklearn.metrics import confusion_matrix, classification_report
-from pretrain_resnet import ResNet18OCR
+from pretrain_resnet import ResNet18OCR, RAMDataset
 
 cv2.setNumThreads(0)
 # --- Global Configuration ---
@@ -28,52 +27,6 @@ FINETUNE_CKPT = "resnet_greek_ocr_finetuned.pth"
 IMAGE_SIZE = 128
 
 
-
-
-
-class RealManuscriptTestDataset(Dataset):
-    """Custom PyTorch Dataset for loading and preprocessing real manuscript images."""
-    def __init__(self, root_dir, model_classes, transform=None):
-        self.root_dir = root_dir
-        self.transform = transform
-        self.image_paths = []
-        self.labels = []
-        self.class_to_idx = {cls_name: i for i, cls_name in enumerate(model_classes)}
-        
-        for folder_name in os.listdir(root_dir):
-            folder_path = os.path.join(root_dir, folder_name)
-            if not os.path.isdir(folder_path): 
-                continue
-                
-            true_class = folder_name.replace("lower_", "").capitalize()
-            if true_class == "Sigma": 
-                true_class = "LunateSigma"
-                
-            if true_class in self.class_to_idx:
-                label_idx = self.class_to_idx[true_class]
-                for img_name in os.listdir(folder_path):
-                    if img_name.lower().endswith(('.png', '.jpg', '.jpeg')):
-                        self.image_paths.append(os.path.join(folder_path, img_name))
-                        self.labels.append(label_idx)
-
-    def __len__(self):
-        return len(self.image_paths)
-
-    def __getitem__(self, idx):
-        img_path = self.image_paths[idx]
-        original_img = cv2.imread(img_path)
-        gray_img = cv2.cvtColor(original_img, cv2.COLOR_BGR2GRAY)
-        blurred = cv2.GaussianBlur(gray_img, (5, 5), 0)
-        
-        # Exact same thresholding used in fine-tuning
-        thresh = cv2.adaptiveThreshold(
-            blurred, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C, cv2.THRESH_BINARY_INV, 15, 4)
-        
-        pil_img = Image.fromarray(thresh)
-        if self.transform:
-            tensor_img = self.transform(pil_img)
-            
-        return tensor_img, self.labels[idx], img_path
 
 
 def plot_confusion_matrix(true_labels, pred_labels, classes):
@@ -112,11 +65,19 @@ def test_pipeline(data_dir, model, classes, device):
     # Only basic resizing and normalization for testing (no data augmentation)
     test_transform = transforms.Compose([
         transforms.Resize((IMAGE_SIZE, IMAGE_SIZE)),
-        transforms.ToTensor(),
+        # transforms.ToTensor(),
         transforms.Normalize((0.5,), (0.5,))
     ])
 
-    test_dataset = RealManuscriptTestDataset(data_dir, classes, transform=test_transform)
+    # 2. DOWNLOAD TEST DATASET FROM HF
+    print("☁️ Downloading packed testing dataset from Hugging Face...")
+    pt_file_path = hf_hub_download(
+        repo_id="huyisme-005/greek-ocr-real-pt", 
+        filename="test_dataset_ram.pt", 
+        repo_type="dataset"
+    )
+
+    test_dataset = RAMDataset(pt_file_path, transform=test_transform)
     test_loader = DataLoader(test_dataset, batch_size=32, shuffle=False, num_workers=0, pin_memory=True)
 
     print("🚀 Starting Batch Processing via DataLoader...")
@@ -128,7 +89,7 @@ def test_pipeline(data_dir, model, classes, device):
     all_pred_labels = []
 
     with torch.no_grad():
-        for images, labels, paths in test_loader:
+        for images, labels in test_loader:
             images = images.to(device)
             labels = labels.to(device)
 

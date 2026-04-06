@@ -8,7 +8,6 @@ learning on degraded real-world manuscripts.
 Author: Huy Le (hl9082)
 """
 
-import os
 import cv2
 import torch
 import torch.nn as nn
@@ -16,7 +15,6 @@ import torch.optim as optim
 from torch.utils.data import Dataset, DataLoader, random_split
 from torchvision import transforms, models
 from huggingface_hub import HfApi, hf_hub_download
-from PIL import Image
 from tqdm import tqdm
 from sklearn.metrics import precision_recall_fscore_support, accuracy_score
 import json

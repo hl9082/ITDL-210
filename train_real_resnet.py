@@ -7,20 +7,18 @@ a dynamic learning rate scheduler and EARLY STOPPING to prevent overfitting.
 Author: Huy Le (hl9082)
 """
 
-import os
 import cv2
 import torch
 import torch.nn as nn
 import torch.optim as optim
-from torch.utils.data import Dataset, DataLoader, random_split
+from torch.utils.data import DataLoader, random_split
 from torchvision import transforms
 from huggingface_hub import hf_hub_download, HfApi
-from PIL import Image
 from tqdm import tqdm
 from sklearn.metrics import precision_recall_fscore_support, accuracy_score
 import json
 import gc
-from pretrain_resnet import ResNet18OCR
+from pretrain_resnet import ResNet18OCR, RAMDataset, EarlyStopping
 
 cv2.setNumThreads(0)
 
@@ -39,71 +37,6 @@ IMAGE_SIZE = 128
 PATIENCE = 8  # How many epochs Early Stopping will wait
 
 
-
-
-
-class RealManuscriptDataset(Dataset):
-    def __init__(self, root_dir, model_classes, transform=None):
-        self.root_dir = root_dir
-        self.transform = transform
-        self.image_paths = []
-        self.labels = []
-        self.class_to_idx = {cls_name: i for i, cls_name in enumerate(model_classes)}
-        
-        for folder_name in os.listdir(root_dir):
-            folder_path = os.path.join(root_dir, folder_name)
-            if not os.path.isdir(folder_path): 
-                continue
-                
-            true_class = folder_name.replace("lower_", "").capitalize()
-            if true_class == "Sigma": 
-                true_class = "LunateSigma"
-                
-            if true_class in self.class_to_idx:
-                label_idx = self.class_to_idx[true_class]
-                for img_name in os.listdir(folder_path):
-                    if img_name.lower().endswith(('.png', '.jpg', '.jpeg')):
-                        self.image_paths.append(os.path.join(folder_path, img_name))
-                        self.labels.append(label_idx)
-
-    def __len__(self):
-        return len(self.image_paths)
-
-    def __getitem__(self, idx):
-        img_path = self.image_paths[idx]
-        original_img = cv2.imread(img_path)
-        gray_img = cv2.cvtColor(original_img, cv2.COLOR_BGR2GRAY)
-        blurred = cv2.GaussianBlur(gray_img, (5, 5), 0)
-        
-        # Adaptive thresholding for messy papyrus
-        thresh = cv2.adaptiveThreshold(
-            blurred, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C, cv2.THRESH_BINARY_INV, 15, 4
-        )
-        
-        pil_img = Image.fromarray(thresh)
-        if self.transform:
-            tensor_img = self.transform(pil_img)
-            
-        return tensor_img, self.labels[idx]
-
-
-# ==========================================
-# 1. EARLY STOPPING CLASS DEFINITION
-# ==========================================
-class EarlyStopping:
-    def __init__(self, patience=5, min_delta=0.0):
-        self.patience = patience
-        self.min_delta = min_delta
-        self.counter = 0
-        self.early_stop = False
-
-    def __call__(self, val_loss, best_loss):
-        if val_loss > best_loss - self.min_delta:
-            self.counter += 1
-            if self.counter >= self.patience:
-                self.early_stop = True
-        else:
-            self.counter = 0
 
 def save_checkpoint_to_hf(model, optimizer, epoch, classes, best_val_loss, metrics):
     print(f"\n   💾 Pushing New Best Checkpoint (Epoch {epoch}) and Metrics to HF...")
@@ -208,12 +141,20 @@ def main():
         transforms.Resize((IMAGE_SIZE, IMAGE_SIZE)),
         transforms.RandomRotation(degrees=20),       
         transforms.RandomAffine(degrees=0, translate=(0.1, 0.1), scale=(0.85, 1.15), shear=10), 
-        transforms.ToTensor(),
+        # transforms.ToTensor(),
         transforms.RandomErasing(p=0.3, scale=(0.02, 0.15)), 
         transforms.Normalize((0.5,), (0.5,))
     ])
 
-    full_dataset = RealManuscriptDataset(TRAIN_DATA_DIR, classes, transform=train_transform)
+    # 2. DOWNLOAD REAL DATASET FROM HF
+    print("☁️ Downloading packed fine-tuning dataset from Hugging Face...")
+    pt_file_path = hf_hub_download(
+        repo_id="huyisme-005/greek-ocr-real-pt", 
+        filename="real_dataset_ram.pt", 
+        repo_type="dataset"
+    )
+
+    full_dataset = RAMDataset(pt_file_path, transform=train_transform)
     train_size = int(0.9 * len(full_dataset))
     val_size = len(full_dataset) - train_size
     train_dataset, val_dataset = random_split(full_dataset, [train_size, val_size])

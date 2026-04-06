@@ -10,8 +10,7 @@ Author: Huy Le (hl9082)
 import os
 import cv2
 import torch
-import torch.nn as nn
-from torchvision import transforms, models
+from torchvision import transforms
 from torch.utils.data import Dataset, DataLoader
 from huggingface_hub import hf_hub_download
 from PIL import Image

@@ -13,7 +13,7 @@ import torch
 import torch.nn as nn
 import torch.optim as optim
 from torch.utils.data import Dataset, DataLoader, random_split
-from torchvision import transforms, models
+from torchvision import transforms
 from huggingface_hub import hf_hub_download, HfApi
 from PIL import Image
 from tqdm import tqdm

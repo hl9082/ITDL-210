@@ -74,26 +74,7 @@ def save_checkpoint_to_hf(model, optimizer, epoch, classes, best_val_loss, metri
 
 
 
-def save_checkpoint_to_hf(model, optimizer, epoch, classes):
-    print(f"\n💾 Saving Fine-Tuned Checkpoint at Epoch {epoch}...")
-    torch.save({
-        'epoch': epoch,
-        'model_state_dict': model.state_dict(),
-        'optimizer_state_dict': optimizer.state_dict(),
-        'classes': classes
-    }, FINETUNE_CKPT)
 
-    try:
-        api = HfApi()
-        api.upload_file(
-            path_or_fileobj=FINETUNE_CKPT,
-            path_in_repo=FINETUNE_CKPT,
-            repo_id=HF_REPO_ID,
-            repo_type="model",
-            commit_message=f"Fine-tuned ResNet-18 at Epoch {epoch}"
-        )
-    except Exception as e:
-        print(f"❌ Failed to upload checkpoint: {e}\n")
 
 
 def main():

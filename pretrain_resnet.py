@@ -227,7 +227,7 @@ def main():
         # 1. Wrap the train_loader with tqdm
         train_bar = tqdm(train_loader, desc=f"Epoch {epoch+1}/{EPOCHS} [Train]")
         
-        for images, labels in train_loader:
+        for images, labels in train_bar:
             images, labels = images.to(device), labels.to(device)
             optimizer.zero_grad()
             outputs = model(images)
@@ -249,7 +249,7 @@ def main():
         val_bar = tqdm(val_loader, desc=f"Epoch {epoch+1}/{EPOCHS} [Val]")
 
         with torch.no_grad():
-            for val_images, val_labels in val_loader:
+            for val_images, val_labels in val_bar:
                 val_images, val_labels = val_images.to(device), val_labels.to(device)
                 val_outputs = model(val_images)
                 loss = criterion(val_outputs, val_labels)

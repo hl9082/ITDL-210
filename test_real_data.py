@@ -28,59 +28,14 @@ import os
 import matplotlib.pyplot as plt
 import seaborn as sns
 from sklearn.metrics import confusion_matrix
+from train_ocr import LeNet5
 
 # --- Global Configuration ---
 HF_REPO_ID = "huyisme-005/ancient-greek-ocr_4" # Your exact repo
 IMAGE_PATH = "test_clean_no_PsiXiBetaZeta/"    # <--- Put your test image path here!
 IMAGE_SIZE = 32
 
-# --- 1. The Network Architecture (Must match exactly) ---
-class LeNet5(nn.Module):
-    """The identical LeNet-5 architecture used during training.
 
-    Designed for fast processing of small, binarized character images. It uses 
-    two convolutional layers followed by three fully connected layers.
-
-    Args:
-        num_classes (int): The total number of distinct character classes to predict.
-        
-    Attributes:
-        features (nn.Sequential): The convolutional and pooling layers for feature extraction.
-        classifier (nn.Sequential): The fully connected layers for final classification.
-    """
-
-    def __init__(self, num_classes):
-        super(LeNet5, self).__init__()
-        self.features = nn.Sequential(
-            nn.Conv2d(1, 6, kernel_size=5, stride=1),
-            nn.Tanh(),
-            nn.AvgPool2d(kernel_size=2, stride=2),
-            
-            nn.Conv2d(6, 16, kernel_size=5, stride=1),
-            nn.Tanh(),
-            nn.AvgPool2d(kernel_size=2, stride=2)
-        )
-        self.classifier = nn.Sequential(
-            nn.Flatten(),
-            nn.Linear(16 * 5 * 5, 120),
-            nn.Tanh(),
-            nn.Linear(120, 84),
-            nn.Tanh(),
-            nn.Linear(84, num_classes)
-        )
-
-    def forward(self, x):
-        """Executes a forward pass through the network.
-
-        Args:
-            x (torch.Tensor): A batch of input images with shape (B, 1, H, W).
-
-        Returns:
-            torch.Tensor: The raw, unnormalized predictions (logits) for each class.
-        """
-        x = self.features(x)
-        x = self.classifier(x)
-        return x
 
 # --- 2. PyTorch Dataset ---
 class RealManuscriptTestDataset(Dataset):

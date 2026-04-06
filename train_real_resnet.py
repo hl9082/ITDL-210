@@ -20,6 +20,7 @@ from tqdm import tqdm
 from sklearn.metrics import precision_recall_fscore_support, accuracy_score
 import json
 import gc
+from pretrain_resnet import ResNet18OCR
 
 cv2.setNumThreads(0)
 
@@ -38,16 +39,7 @@ IMAGE_SIZE = 128
 PATIENCE = 8  # How many epochs Early Stopping will wait
 
 
-class ResNet18OCR(nn.Module):
-    def __init__(self, num_classes):
-        super(ResNet18OCR, self).__init__()
-        self.resnet = models.resnet18(weights=None)
-        self.resnet.conv1 = nn.Conv2d(1, 64, kernel_size=7, stride=2, padding=3, bias=False)
-        num_ftrs = self.resnet.fc.in_features
-        self.resnet.fc = nn.Linear(num_ftrs, num_classes)
 
-    def forward(self, x):
-        return self.resnet(x)
 
 
 class RealManuscriptDataset(Dataset):

@@ -18,6 +18,7 @@ from PIL import Image
 import matplotlib.pyplot as plt
 import seaborn as sns
 from sklearn.metrics import confusion_matrix, classification_report
+from pretrain_resnet import ResNet18OCR
 
 cv2.setNumThreads(0)
 # --- Global Configuration ---
@@ -28,19 +29,7 @@ FINETUNE_CKPT = "resnet_greek_ocr_finetuned.pth"
 IMAGE_SIZE = 128
 
 
-class ResNet18OCR(nn.Module):
-    """A customized ResNet-18 model for grayscale character recognition."""
-    def __init__(self, num_classes):
-        super(ResNet18OCR, self).__init__()
-        self.resnet = models.resnet18(weights=None)
-        self.resnet.conv1 = nn.Conv2d(
-            1, 64, kernel_size=7, stride=2, padding=3, bias=False
-        )
-        num_ftrs = self.resnet.fc.in_features
-        self.resnet.fc = nn.Linear(num_ftrs, num_classes)
 
-    def forward(self, x):
-        return self.resnet(x)
 
 
 class RealManuscriptTestDataset(Dataset):

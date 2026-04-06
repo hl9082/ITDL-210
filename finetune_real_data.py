@@ -27,6 +27,7 @@ from torch.utils.data import Dataset, DataLoader, random_split
 from torchvision import transforms
 from huggingface_hub import hf_hub_download, HfApi
 from PIL import Image
+from train_ocr import LeNet5
 
 # --- Configuration ---
 HF_REPO_ID = "huyisme-005/ancient-greek-ocr_4"
@@ -42,40 +43,7 @@ PATIENCE = 8 #increase to 8 to give the model more time to learn
 SAVE_INTERVAL_SEC = 120  # Save to HF every 2 minutes
 
 
-class LeNet5(nn.Module):
-    """The identical LeNet-5 architecture used during training.
 
-    Args:
-        num_classes (int): The total number of distinct character classes to predict.
-        
-    Attributes:
-        features (torch.nn.Sequential): The convolutional and pooling layers.
-        classifier (torch.nn.Sequential): The fully connected layers.
-    """
-    def __init__(self, num_classes):
-        super(LeNet5, self).__init__()
-        self.features = nn.Sequential(
-            nn.Conv2d(1, 6, kernel_size=5, stride=1),
-            nn.Tanh(),
-            nn.AvgPool2d(kernel_size=2, stride=2),
-            nn.Conv2d(6, 16, kernel_size=5, stride=1),
-            nn.Tanh(),
-            nn.AvgPool2d(kernel_size=2, stride=2)
-        )
-        self.classifier = nn.Sequential(
-            nn.Flatten(),
-            nn.Linear(16 * 5 * 5, 120),
-            nn.Tanh(),
-            nn.Linear(120, 84),
-            nn.Tanh(),
-            nn.Linear(84, num_classes)
-        )
-
-    def forward(self, x):
-        """Executes a forward pass."""
-        x = self.features(x)
-        x = self.classifier(x)
-        return x
 
 
 class RealManuscriptDataset(Dataset):

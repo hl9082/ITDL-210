@@ -143,6 +143,12 @@ def plot_confusion_matrix(true_labels, pred_labels, classes):
     plt.title('Real-World Manuscript Confusion Matrix')
     plt.xticks(rotation=45)
     plt.savefig('real_world_confusion_matrix.png', bbox_inches='tight')
+
+    print("\n======================================================")
+    print("🏆 FINAL CLASSIFICATION REPORT (Precision, Recall, F1)")
+    print("======================================================")
+    report = classification_report(true_labels, pred_labels, target_names=classes)
+    print(report)
     print("📊 Confusion matrix saved as 'real_world_confusion_matrix.png'")
 
 def download_and_load_model(device):

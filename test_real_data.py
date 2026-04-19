@@ -27,7 +27,7 @@ import os
 #confusion matrix generation
 import matplotlib.pyplot as plt
 import seaborn as sns
-from sklearn.metrics import confusion_matrix
+from sklearn.metrics import confusion_matrix, classification_report
 from train_ocr import LeNet5
 
 # --- Global Configuration ---

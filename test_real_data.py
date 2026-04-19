@@ -147,7 +147,8 @@ def plot_confusion_matrix(true_labels, pred_labels, classes):
     print("\n======================================================")
     print("🏆 FINAL CLASSIFICATION REPORT (Precision, Recall, F1)")
     print("======================================================")
-    report = classification_report(true_labels, pred_labels, target_names=classes)
+    report = classification_report(true_labels, pred_labels, target_names=classes, labels=range(len(classes)), 
+    zero_division=0)
     print(report)
     print("📊 Confusion matrix saved as 'real_world_confusion_matrix.png'")
 

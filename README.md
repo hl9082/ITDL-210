@@ -40,6 +40,7 @@ pip install -r requirements.txt
 ```
 
 📥 Dataset Acquisition
+
 To train the model, you need examples of Ancient Greek letters. We recommend using open-access datasets such as the Ancient Lives / Ancient Greek Letters dataset from Kaggle:
 1. Create a Kaggle account and install the API.
 2. Download a Greek Papyrus dataset:

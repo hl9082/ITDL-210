@@ -22,8 +22,10 @@ ancient_greek_ocr_project/
 ⚙️ Installation & Setup
 Clone or create the project directory and navigate into it:
 
-Bash
+```
 cd ancient_greek_ocr_project
+```
+
 Create a virtual environment (Recommended):
 
 ```

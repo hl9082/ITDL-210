@@ -82,4 +82,10 @@ python step3_test_real_data.py
 Output: Prints the predicted characters and their bounding box coordinates on the real manuscript.
 
 🔬 Scientific Context
+
 This project draws inspiration from advanced character recognition techniques applied to heavily degraded texts, such as those discussed in D. Walvoord's dissertation on the Archimedes Palimpsest (Correlation-Based Character Recognition). By modernizing these pattern-matching approaches with modern Convolutional Neural Networks, we achieve a robust pipeline capable of handling heavy noise, mold damage, and fading ink.
+
+
+## Acknowledgement
+
+We'd love to thank Matthew Swindall for the training dataset, Anna Starynska for the test data, Dr. Juilee Decker, Dr. David Messinger, and Dr. Roger Easton, Jr., for the valuable feedbacks!

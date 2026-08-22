@@ -26,45 +26,52 @@ Bash
 cd ancient_greek_ocr_project
 Create a virtual environment (Recommended):
 
-Bash
+```
 python -m venv venv
 source venv/bin/activate  # On Windows use: venv\Scripts\activate
+```
+
 Install the required dependencies:
 
-Bash
+```
 pip install -r requirements.txt
+```
+
 📥 Dataset Acquisition
-To train the model, you need examples of Ancient Greek letters. We recommend using open-access datasets such as the Ancient Lives / Ancient Greek Letters dataset from Kaggle.
+To train the model, you need examples of Ancient Greek letters. We recommend using open-access datasets such as the Ancient Lives / Ancient Greek Letters dataset from Kaggle:
+1. Create a Kaggle account and install the API.
+2. Download a Greek Papyrus dataset:
 
-Create a Kaggle account and install the API.
-
-Download a Greek Papyrus dataset:
-
-Bash
+```
 kaggle datasets download -d [dataset-path]
 unzip [dataset-name].zip -d 1_raw_downloaded_data/
+```
 (Alternatively, you can manually download manuscript images from the Vatican Library or CSNTM and place them in the 1_raw_downloaded_data/ folder).
 
 🚀 How to Run the Pipeline
 Step 1: Segmentation and Binarization
 This script reads the raw manuscript images, applies Non-Local Means Denoising to remove parchment grain, uses Adaptive Binarization to isolate the ink, and extracts individual letters using contour detection. The letters are resized to 64x64 pixels and saved into class-specific folders.
 
-Bash
+```
 python step1_opencv_segment.py
+```
 Output: Populates the 2_processed_binary_data/ directory.
 
 Step 2: Train the Custom OCR Model
 This script builds a Convolutional Neural Network (CNN) using PyTorch. It loads the clean, binary images generated in Step 1, trains the network to recognize the shapes of different Greek letters, and saves the trained weights.
 
-Bash
+```
 python step2_train_ocr.py
+```
 Output: Saves the trained model to saved_models/greek_ocr_model.pth.
 
 Step 3: Inference on Real Manuscripts
 Once the model is trained, place a new, unseen manuscript image into the 3_real_test_data/ folder. This script will run the Step 1 OpenCV pipeline to extract the letters from the new page, and then feed those letters into your Step 2 trained model to predict the Greek characters.
 
-Bash
+```
 python step3_test_real_data.py
+```
+
 Output: Prints the predicted characters and their bounding box coordinates on the real manuscript.
 
 🔬 Scientific Context

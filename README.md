@@ -3,9 +3,9 @@ This project implements a complete Computer Vision and Deep Learning pipeline to
 
 Because standard off-the-shelf OCR engines struggle with degraded historical texts, this project uses a custom two-phase approach:
 
-OpenCV for dynamic segmentation and binarization (separating ink from parchment).
+* OpenCV for dynamic segmentation and binarization (separating ink from parchment).
 
-PyTorch for training a custom Convolutional Neural Network (CNN) to recognize the ancient character shapes.
+* PyTorch for training a custom Convolutional Neural Network (CNN) to recognize the ancient character shapes.
 
 📂 Project Structure
 ```

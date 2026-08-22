@@ -52,7 +52,9 @@ unzip [dataset-name].zip -d 1_raw_downloaded_data/
 (Alternatively, you can manually download manuscript images from the Vatican Library or CSNTM and place them in the 1_raw_downloaded_data/ folder).
 
 🚀 How to Run the Pipeline
+
 Step 1: Segmentation and Binarization
+
 This script reads the raw manuscript images, applies Non-Local Means Denoising to remove parchment grain, uses Adaptive Binarization to isolate the ink, and extracts individual letters using contour detection. The letters are resized to 64x64 pixels and saved into class-specific folders.
 
 ```
@@ -61,6 +63,7 @@ python step1_opencv_segment.py
 Output: Populates the 2_processed_binary_data/ directory.
 
 Step 2: Train the Custom OCR Model
+
 This script builds a Convolutional Neural Network (CNN) using PyTorch. It loads the clean, binary images generated in Step 1, trains the network to recognize the shapes of different Greek letters, and saves the trained weights.
 
 ```
@@ -69,6 +72,7 @@ python step2_train_ocr.py
 Output: Saves the trained model to saved_models/greek_ocr_model.pth.
 
 Step 3: Inference on Real Manuscripts
+
 Once the model is trained, place a new, unseen manuscript image into the 3_real_test_data/ folder. This script will run the Step 1 OpenCV pipeline to extract the letters from the new page, and then feed those letters into your Step 2 trained model to predict the Greek characters.
 
 ```
